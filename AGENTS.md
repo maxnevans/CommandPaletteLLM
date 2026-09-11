@@ -4,7 +4,7 @@
 
 `CommandPaletteLLM.sln` contains one Windows Command Palette extension targeting .NET 10. Source lives in `CommandPaletteLLM/`: `Program.cs` hosts the COM server, `CommandPaletteLLM.cs` implements the extension entry point, and `CommandPaletteLLMCommandsProvider.cs` exposes commands. Put pages in `CommandPaletteLLM/Pages/` and images in `CommandPaletteLLM/Assets/`. MSIX metadata is defined by `Package.appxmanifest` and `app.manifest`; publish settings live under `Properties/PublishProfiles/`. Central build and dependency settings belong in `Directory.Build.props` and `Directory.Packages.props`.
 
-There is currently no test project. Add tests in a sibling project such as `CommandPaletteLLM.Tests/`, then include it in the solution.
+Tests live in the sibling `CommandPaletteLLM.Tests/` project and are included in the solution.
 
 ## Build, Test, and Development Commands
 
