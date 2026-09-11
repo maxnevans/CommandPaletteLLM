@@ -3,6 +3,7 @@
     <TargetFramework>net10.0-windows10.0.26100.0</TargetFramework>
     <WindowsSdkPackageVersion>10.0.26100.68-preview</WindowsSdkPackageVersion>
     <IsPackable>false</IsPackable>
+    <Nullable>enable</Nullable>
     <NoWarn>CA1707;$(NoWarn)</NoWarn>
   </PropertyGroup>
 

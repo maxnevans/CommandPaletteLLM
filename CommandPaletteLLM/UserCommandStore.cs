@@ -105,5 +105,6 @@ internal sealed class UserCommandStore
         !string.IsNullOrWhiteSpace(command.Id) &&
         !string.IsNullOrWhiteSpace(command.Name) &&
         !string.IsNullOrWhiteSpace(command.OutputFormat) &&
+        command.SendDelayMilliseconds is >= 0 and <= 10_000 &&
         OutputFormatter.TryFormat(command.OutputFormat, string.Empty, out _, out _);
 }

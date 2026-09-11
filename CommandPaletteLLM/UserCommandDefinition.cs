@@ -8,10 +8,13 @@ internal sealed class UserCommandDefinition
 
     public string OutputFormat { get; set; } = string.Empty;
 
+    public int SendDelayMilliseconds { get; set; } = 650;
+
     public UserCommandDefinition Clone() => new()
     {
         Id = Id,
         Name = Name,
         OutputFormat = OutputFormat,
+        SendDelayMilliseconds = SendDelayMilliseconds,
     };
 }

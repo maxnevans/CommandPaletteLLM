@@ -12,11 +12,16 @@ namespace CommandPaletteLLM;
 internal sealed partial class UserCommandsSettingsForm : FormContent
 {
     private readonly UserCommandStore _store;
+    private readonly LlmProviderSettingsStore _providerSettingsStore;
     private readonly Action _commandsChanged;
 
-    public UserCommandsSettingsForm(UserCommandStore store, Action commandsChanged)
+    public UserCommandsSettingsForm(
+        UserCommandStore store,
+        LlmProviderSettingsStore providerSettingsStore,
+        Action commandsChanged)
     {
         _store = store;
+        _providerSettingsStore = providerSettingsStore;
         _commandsChanged = commandsChanged;
         Refresh();
     }
@@ -40,6 +45,11 @@ internal sealed partial class UserCommandsSettingsForm : FormContent
             if (string.Equals(actionId, "add", StringComparison.Ordinal))
             {
                 return Add(input);
+            }
+
+            if (string.Equals(actionId, "save-provider", StringComparison.Ordinal))
+            {
+                return SaveProvider(input);
             }
 
             const string savePrefix = "save:";
@@ -78,9 +88,33 @@ internal sealed partial class UserCommandsSettingsForm : FormContent
             Id = Guid.NewGuid().ToString("N"),
             Name = ReadText(input, "newName"),
             OutputFormat = "{}",
+            SendDelayMilliseconds = 650,
         });
 
         return ValidateAndSave(commands);
+    }
+
+    private CommandResult SaveProvider(JsonObject input)
+    {
+        var existing = _providerSettingsStore.Get();
+        var apiKey = ReadText(input, "providerApiKey");
+        var settings = new LlmProviderSettings
+        {
+            BaseUrl = ReadText(input, "providerBaseUrl", existing.BaseUrl).Trim(),
+            Model = ReadText(input, "providerModel", existing.Model).Trim(),
+            ApiKey = ReadBoolean(input, "clearProviderApiKey")
+                ? string.Empty
+                : string.IsNullOrEmpty(apiKey) ? existing.ApiKey : apiKey,
+        };
+
+        if (!LlmProviderSettingsStore.IsValid(settings))
+        {
+            return ShowError("Provider base URL must be an absolute HTTP or HTTPS URL, and model is required.");
+        }
+
+        _providerSettingsStore.Replace(settings);
+        Refresh();
+        return CommandResult.KeepOpen();
     }
 
     private CommandResult Save(JsonObject input, string commandId)
@@ -95,6 +129,16 @@ internal sealed partial class UserCommandsSettingsForm : FormContent
 
         command.Name = ReadText(input, $"name_{command.Id}", command.Name);
         command.OutputFormat = ReadText(input, $"format_{command.Id}", command.OutputFormat);
+        var delayKey = $"delay_{command.Id}";
+        if (input[delayKey] is not null)
+        {
+            if (!TryReadInteger(input, delayKey, out var delay))
+            {
+                return ShowError($"Command '{command.Name}' must have a whole-number send delay.");
+            }
+
+            command.SendDelayMilliseconds = delay;
+        }
 
         return ValidateAndSave(commands);
     }
@@ -140,7 +184,10 @@ internal sealed partial class UserCommandsSettingsForm : FormContent
 
     private void Refresh(string? errorMessage = null)
     {
-        TemplateJson = BuildCard(_store.GetCommands(), errorMessage).ToJsonString();
+        TemplateJson = BuildCard(
+            _providerSettingsStore.Get(),
+            _store.GetCommands(),
+            errorMessage).ToJsonString();
         DataJson = "{}";
         StateJson = "{}";
     }
@@ -154,6 +201,7 @@ internal sealed partial class UserCommandsSettingsForm : FormContent
         "IL2026",
         Justification = "The card builder adds only primitive values and explicit JsonNode instances.")]
     private static JsonObject BuildCard(
+        LlmProviderSettings providerSettings,
         IReadOnlyList<UserCommandDefinition> commands,
         string? errorMessage)
     {
@@ -162,14 +210,61 @@ internal sealed partial class UserCommandsSettingsForm : FormContent
             new JsonObject
             {
                 ["type"] = "TextBlock",
-                ["text"] = "Commands",
+                ["text"] = "LLM provider",
                 ["size"] = "Large",
                 ["weight"] = "Bolder",
             },
             new JsonObject
             {
                 ["type"] = "TextBlock",
-                ["text"] = "Create commands here, then use Command Palette's native command settings to configure aliases and global results. Edit a command to change its output format.",
+                ["text"] = "Connect to an OpenAI-compatible chat completions API, including llama.cpp server.",
+                ["wrap"] = true,
+            },
+            BuildTextInput(
+                "providerBaseUrl",
+                "API base URL",
+                providerSettings.BaseUrl,
+                "http://127.0.0.1:8080/v1"),
+            BuildTextInput(
+                "providerModel",
+                "Model",
+                providerSettings.Model,
+                "local-model"),
+            BuildPasswordInput(
+                "providerApiKey",
+                "API key (optional)",
+                string.IsNullOrEmpty(providerSettings.ApiKey)
+                    ? "Optional bearer token"
+                    : "Saved; leave blank to keep it"),
+            new JsonObject
+            {
+                ["type"] = "Input.Toggle",
+                ["id"] = "clearProviderApiKey",
+                ["title"] = "Clear saved API key",
+                ["value"] = "false",
+                ["valueOn"] = "true",
+                ["valueOff"] = "false",
+            },
+            new JsonObject
+            {
+                ["type"] = "ActionSet",
+                ["actions"] = new JsonArray
+                {
+                    BuildSubmitAction("Save provider", "save-provider"),
+                },
+            },
+            new JsonObject
+            {
+                ["type"] = "TextBlock",
+                ["text"] = "Commands",
+                ["size"] = "Large",
+                ["weight"] = "Bolder",
+                ["separator"] = true,
+            },
+            new JsonObject
+            {
+                ["type"] = "TextBlock",
+                ["text"] = "Create commands here, then use Command Palette's native command settings to configure aliases and global results. Each format turns the message into the prompt sent to the provider.",
                 ["wrap"] = true,
             },
         };
@@ -285,6 +380,13 @@ internal sealed partial class UserCommandsSettingsForm : FormContent
                                             ["spacing"] = "Small",
                                             ["wrap"] = true,
                                         },
+                                        new JsonObject
+                                        {
+                                            ["type"] = "TextBlock",
+                                            ["text"] = $"Send delay: {command.SendDelayMilliseconds} ms",
+                                            ["isSubtle"] = true,
+                                            ["spacing"] = "Small",
+                                        },
                                     },
                                 },
                                 new JsonObject
@@ -333,9 +435,15 @@ internal sealed partial class UserCommandsSettingsForm : FormContent
                             string.Empty),
                         BuildTextInput(
                             $"format_{command.Id}",
-                            "Output format",
+                            "Prompt format",
                             command.OutputFormat,
                             "Use {} for the search term, {{ for {, and }} for }."),
+                        BuildNumberInput(
+                            $"delay_{command.Id}",
+                            "Send delay (milliseconds)",
+                            command.SendDelayMilliseconds,
+                            0,
+                            10_000),
                         new JsonObject
                         {
                             ["type"] = "ActionSet",
@@ -374,6 +482,37 @@ internal sealed partial class UserCommandsSettingsForm : FormContent
             ["placeholder"] = placeholder,
             ["isRequired"] = isRequired,
             ["errorMessage"] = $"{label} is required.",
+        };
+
+    private static JsonObject BuildPasswordInput(
+        string id,
+        string label,
+        string placeholder) =>
+        new()
+        {
+            ["type"] = "Input.Text",
+            ["id"] = id,
+            ["label"] = label,
+            ["placeholder"] = placeholder,
+            ["style"] = "password",
+        };
+
+    private static JsonObject BuildNumberInput(
+        string id,
+        string label,
+        int value,
+        int minimum,
+        int maximum) =>
+        new()
+        {
+            ["type"] = "Input.Number",
+            ["id"] = id,
+            ["label"] = label,
+            ["value"] = value,
+            ["min"] = minimum,
+            ["max"] = maximum,
+            ["isRequired"] = true,
+            ["errorMessage"] = $"{label} must be between {minimum} and {maximum}.",
         };
 
     private static JsonObject BuildSubmitAction(
@@ -448,6 +587,11 @@ internal sealed partial class UserCommandsSettingsForm : FormContent
             {
                 return $"Command '{command.Name}' has an invalid output format: {error}";
             }
+
+            if (command.SendDelayMilliseconds is < 0 or > 10_000)
+            {
+                return $"Command '{command.Name}' must have a send delay between 0 and 10000 milliseconds.";
+            }
         }
 
         return null;
@@ -455,6 +599,28 @@ internal sealed partial class UserCommandsSettingsForm : FormContent
 
     private static string ReadText(JsonObject input, string key, string fallback = "") =>
         input[key]?.GetValue<string>() ?? fallback;
+
+    private static bool ReadBoolean(JsonObject input, string key) =>
+        string.Equals(input[key]?.ToString(), "true", StringComparison.OrdinalIgnoreCase);
+
+    private static bool TryReadInteger(JsonObject input, string key, out int value)
+    {
+        if (input[key] is JsonValue jsonValue)
+        {
+            if (jsonValue.TryGetValue(out value))
+            {
+                return true;
+            }
+
+            if (jsonValue.TryGetValue<string>(out var text) && int.TryParse(text, out value))
+            {
+                return true;
+            }
+        }
+
+        value = 0;
+        return false;
+    }
 
     private static string? ReadActionId(string payload)
     {

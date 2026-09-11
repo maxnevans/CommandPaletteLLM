@@ -5,9 +5,15 @@ namespace CommandPaletteLLM;
 
 internal sealed partial class UserCommandsSettings : ICommandSettings
 {
-    public UserCommandsSettings(UserCommandStore store, Action commandsChanged)
+    public UserCommandsSettings(
+        UserCommandStore store,
+        LlmProviderSettingsStore providerSettingsStore,
+        Action commandsChanged)
     {
-        SettingsPage = new UserCommandsSettingsPage(store, commandsChanged);
+        SettingsPage = new UserCommandsSettingsPage(
+            store,
+            providerSettingsStore,
+            commandsChanged);
     }
 
     public IContentPage SettingsPage { get; }
