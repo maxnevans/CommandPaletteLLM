@@ -198,11 +198,14 @@ internal sealed partial class FormattedCommandPage : DynamicListPage, IDisposabl
                 return;
             }
 
+            cancellationToken.ThrowIfCancellationRequested();
+
             PublishStatus(
                 requestVersion,
                 "Waiting for LLM response…",
                 isLoading: true,
                 cancellationToken);
+            cancellationToken.ThrowIfCancellationRequested();
             _requestInFlight = true;
             var responses = await _llmClient.CompleteAsync(
                 prompt,

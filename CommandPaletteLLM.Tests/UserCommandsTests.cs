@@ -477,6 +477,31 @@ public sealed class UserCommandsTests
     }
 
     [Fact]
+    public async Task FormattedPage_DoesNotSendClearedQueryAfterConnectionCheckCompletes()
+    {
+        var client = new ControlledLlmClient();
+        var monitor = new DelayedEndpointMonitor();
+        var page = new FormattedCommandPage(new UserCommandDefinition
+        {
+            Id = "greeting",
+            Name = "Greeting",
+            OutputFormat = "Prompt: {}",
+        }, client, TimeSpan.Zero, endpointMonitor: monitor);
+
+        page.GetItems();
+        page.SearchText = "x";
+        await WaitUntilAsync(() => monitor.PendingCheckCount == 1);
+
+        page.SearchText = string.Empty;
+        monitor.CompleteCheck();
+        await Task.Yield();
+
+        Assert.Empty(client.Requests);
+        Assert.Empty(page.GetItems());
+        Assert.False(page.IsLoading);
+    }
+
+    [Fact]
     public async Task FormattedPage_ShowsConnectionAndRequestProgressThenRecovers()
     {
         var client = new ControlledLlmClient();
@@ -1009,6 +1034,47 @@ public sealed class UserCommandsTests
                 Status = status;
                 StatusChanged?.Invoke();
             }
+        }
+    }
+
+    private sealed class DelayedEndpointMonitor : ILlmEndpointMonitor
+    {
+        private readonly TaskCompletionSource<bool> _checkCompletion =
+            new(TaskCreationOptions.RunContinuationsAsynchronously);
+
+        public LlmEndpointStatus Status => LlmEndpointStatus.Available;
+
+        public int PendingCheckCount { get; private set; }
+
+        public event Action? StatusChanged
+        {
+            add { }
+            remove { }
+        }
+
+        public Task<bool> CheckAsync(bool force, CancellationToken cancellationToken)
+        {
+            if (force)
+            {
+                return Task.FromResult(true);
+            }
+
+            PendingCheckCount++;
+            return _checkCompletion.Task;
+        }
+
+        public void CompleteCheck() => _checkCompletion.TrySetResult(true);
+
+        public void Invalidate()
+        {
+        }
+
+        public void ReportReachable()
+        {
+        }
+
+        public void ReportUnreachable()
+        {
         }
     }
 
