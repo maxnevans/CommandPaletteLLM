@@ -4,6 +4,8 @@ VisualStudioVersion = 17.13.35507.96
 MinimumVisualStudioVersion = 10.0.40219.1
 Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "CommandPaletteLLM", "CommandPaletteLLM\CommandPaletteLLM.csproj", "{8654A769-FF5F-468E-A404-DF62786CC986}"
 EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "CommandPaletteLLM.Tests", "CommandPaletteLLM.Tests\CommandPaletteLLM.Tests.csproj", "{917C08E8-23A1-4A3B-9AFE-54E4F38E1847}"
+EndProject
 Global
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution
 		Debug|ARM64 = Debug|ARM64
@@ -24,6 +26,14 @@ Global
 		{8654A769-FF5F-468E-A404-DF62786CC986}.Release|x64.ActiveCfg = Release|x64
 		{8654A769-FF5F-468E-A404-DF62786CC986}.Release|x64.Build.0 = Release|x64
 		{8654A769-FF5F-468E-A404-DF62786CC986}.Release|x64.Deploy.0 = Release|x64
+		{917C08E8-23A1-4A3B-9AFE-54E4F38E1847}.Debug|ARM64.ActiveCfg = Debug|ARM64
+		{917C08E8-23A1-4A3B-9AFE-54E4F38E1847}.Debug|ARM64.Build.0 = Debug|ARM64
+		{917C08E8-23A1-4A3B-9AFE-54E4F38E1847}.Debug|x64.ActiveCfg = Debug|x64
+		{917C08E8-23A1-4A3B-9AFE-54E4F38E1847}.Debug|x64.Build.0 = Debug|x64
+		{917C08E8-23A1-4A3B-9AFE-54E4F38E1847}.Release|ARM64.ActiveCfg = Release|ARM64
+		{917C08E8-23A1-4A3B-9AFE-54E4F38E1847}.Release|ARM64.Build.0 = Release|ARM64
+		{917C08E8-23A1-4A3B-9AFE-54E4F38E1847}.Release|x64.ActiveCfg = Release|x64
+		{917C08E8-23A1-4A3B-9AFE-54E4F38E1847}.Release|x64.Build.0 = Release|x64
 	EndGlobalSection
 	GlobalSection(SolutionProperties) = preSolution
 		HideSolutionNode = FALSE

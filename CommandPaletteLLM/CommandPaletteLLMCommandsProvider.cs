@@ -13,7 +13,7 @@ public partial class CommandPaletteLLMCommandsProvider : CommandProvider
         Icon = IconHelpers.FromRelativePath("Assets\\StoreLogo.png");
         _commands =
         [
-            new CommandItem(new CommandPaletteLLMPage()) { Title = DisplayName },
+            new CommandItem(new CommandPaletteLLMPage()) { Title = "Echo message" },
         ];
     }
 
