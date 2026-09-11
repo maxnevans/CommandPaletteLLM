@@ -59,6 +59,7 @@ internal sealed partial class FormattedFallbackItem : FallbackCommandItem
     {
         CancelRequest();
         var requestVersion = Interlocked.Increment(ref _requestVersion);
+        Command = new NoOpCommand();
 
         if (string.IsNullOrWhiteSpace(query) ||
             _endpointMonitor.Status != LlmEndpointStatus.Available ||
@@ -88,7 +89,7 @@ internal sealed partial class FormattedFallbackItem : FallbackCommandItem
                 variations: 1,
                 cancellationToken: cancellationToken)
                 .ConfigureAwait(false);
-            Publish(requestVersion, responses[0], cancellationToken);
+            Publish(requestVersion, responses[0], canCopy: true, cancellationToken);
         }
         catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
         {
@@ -115,15 +116,21 @@ internal sealed partial class FormattedFallbackItem : FallbackCommandItem
         int requestVersion,
         string message,
         CancellationToken cancellationToken) =>
-        Publish(requestVersion, $"LLM request failed: {message}", cancellationToken);
+        Publish(
+            requestVersion,
+            $"LLM request failed: {message}",
+            canCopy: false,
+            cancellationToken);
 
     private void Publish(
         int requestVersion,
         string title,
+        bool canCopy,
         CancellationToken cancellationToken)
     {
         if (!cancellationToken.IsCancellationRequested && requestVersion == _requestVersion)
         {
+            Command = canCopy ? new CopyTextCommand(title) : new NoOpCommand();
             Title = title;
         }
     }
@@ -132,6 +139,7 @@ internal sealed partial class FormattedFallbackItem : FallbackCommandItem
     {
         CancelRequest();
         Interlocked.Increment(ref _requestVersion);
+        Command = new NoOpCommand();
         Title = string.Empty;
     }
 

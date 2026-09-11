@@ -193,9 +193,33 @@ public sealed class UserCommandsTests
 
         var item = Assert.Single(page.GetItems());
         Assert.Equal("This is the answer.", item.Title);
-        Assert.IsType<CopyTextCommand>(item.Command);
+        Assert.Equal("This is the answer.", Assert.IsType<CopyTextCommand>(item.Command).Text);
+        Assert.Equal("This is the answer.", item.TextToSuggest);
+        Assert.False(page.ShowDetails);
+        Assert.Null(item.Details);
         Assert.Equal("Hello Maxim!", Assert.Single(client.Prompts));
         Assert.False(page.IsLoading);
+    }
+
+    [Fact]
+    public void FormattedPage_ShowsMultilineResponseInOneItemAndFullDetails()
+    {
+        const string response = "First line\nSecond line\nThird line";
+        var page = new FormattedCommandPage(new UserCommandDefinition
+        {
+            Id = "summarize",
+            Name = "Summarize",
+            OutputFormat = "Summarize: {}",
+        }, new RecordingLlmClient(response), TimeSpan.Zero);
+
+        page.SearchText = "Text";
+
+        var item = Assert.Single(page.GetItems());
+        Assert.Equal("First line", item.Title);
+        Assert.Equal("Second line Third line", item.Subtitle);
+        Assert.Equal(response, item.Details?.Body);
+        Assert.Equal(ContentSize.Large, Assert.IsType<Details>(item.Details).Size);
+        Assert.True(page.ShowDetails);
     }
 
     [Fact]
@@ -212,6 +236,9 @@ public sealed class UserCommandsTests
         fallback.FallbackHandler!.UpdateQuery("Maxim");
 
         Assert.Equal("This is the answer.", fallback.Title);
+        Assert.Equal(
+            "This is the answer.",
+            Assert.IsType<CopyTextCommand>(fallback.Command).Text);
         Assert.Equal("Hello Maxim!", Assert.Single(client.Prompts));
     }
 

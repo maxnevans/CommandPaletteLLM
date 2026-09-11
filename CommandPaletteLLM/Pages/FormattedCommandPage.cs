@@ -13,6 +13,7 @@ internal sealed partial class FormattedCommandPage : DynamicListPage, IDisposabl
 {
     private static readonly TimeSpan DefaultRetryDelay = TimeSpan.FromSeconds(5);
     private static readonly TimeSpan DefaultStatusUpdateInterval = TimeSpan.FromMilliseconds(100);
+    private const int CompactResultCharacterLimit = 120;
 
     private readonly string _promptFormat;
     private readonly int _responseVariations;
@@ -210,10 +211,8 @@ internal sealed partial class FormattedCommandPage : DynamicListPage, IDisposabl
             Publish(
                 requestVersion,
                 responses
-                    .Select(response => (IListItem)new ListItem(new CopyTextCommand(response))
-                    {
-                        Title = response,
-                    })
+                    .Select((response, index) =>
+                        (IListItem)CreateResponseItem(response, index, responses.Count))
                     .ToArray(),
                 isLoading: false,
                 cancellationToken);
@@ -380,12 +379,43 @@ internal sealed partial class FormattedCommandPage : DynamicListPage, IDisposabl
         }
 
         _items = items;
+        ShowDetails = items.Any(item => item.Details is not null);
         IsLoading = isLoading;
         RaiseItemsChanged();
     }
 
     private static ListItem CreateStatusItem(string message) =>
         new(new NoOpCommand()) { Title = message };
+
+    private static ListItem CreateResponseItem(string response, int index, int responseCount)
+    {
+        var lines = response
+            .Split(['\r', '\n'], StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
+        var title = lines.FirstOrDefault() ?? response;
+        var subtitle = lines.Length > 1
+            ? string.Join(" ", lines.Skip(1))
+            : responseCount > 1
+                ? $"Variation {index + 1}"
+                : "Select to copy the full response";
+        var needsDetails = response.Length > CompactResultCharacterLimit ||
+            response.Contains('\r') ||
+            response.Contains('\n');
+
+        return new ListItem(new CopyTextCommand(response))
+        {
+            Title = title,
+            Subtitle = subtitle,
+            TextToSuggest = response,
+            Details = needsDetails ? new Details
+            {
+                Title = responseCount > 1
+                    ? $"Response variation {index + 1}"
+                    : "LLM response",
+                Body = response,
+                Size = ContentSize.Large,
+            } : null,
+        };
+    }
 
     private static string FormatDuration(TimeSpan duration) =>
         $"{Math.Max(0, duration.TotalSeconds):0.0}s";
