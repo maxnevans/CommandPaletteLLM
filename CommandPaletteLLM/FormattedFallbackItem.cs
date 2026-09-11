@@ -9,6 +9,7 @@ namespace CommandPaletteLLM;
 
 internal sealed partial class FormattedFallbackItem : FallbackCommandItem
 {
+    private readonly StableCopyTextCommand _copyCommand;
     private readonly string _promptFormat;
     private readonly ILlmClient _llmClient;
     private readonly TimeSpan _debounce;
@@ -35,16 +36,19 @@ internal sealed partial class FormattedFallbackItem : FallbackCommandItem
         Action? rootQueryObserved = null,
         ILlmEndpointMonitor? endpointMonitor = null)
         : base(
-            new NoOpCommand(),
+            CreateCopyCommand(definition.Id),
             definition.Name,
-            $"CommandPaletteLLM.Global.{definition.Id}")
+            GetFallbackId(definition.Id))
     {
+        _copyCommand = Command as StableCopyTextCommand ??
+            throw new InvalidOperationException("The fallback copy command was not initialized.");
         _promptFormat = definition.OutputFormat;
         _llmClient = llmClient;
         _debounce = debounce ?? TimeSpan.FromMilliseconds(definition.SendDelayMilliseconds);
         _isTopLevelCommandQuery = isTopLevelCommandQuery;
         _rootQueryObserved = rootQueryObserved;
         _endpointMonitor = endpointMonitor ?? new AssumedAvailableEndpointMonitor();
+        Icon = CommandIconStore.GetIcon(definition.IconPath);
         Title = string.Empty;
     }
 
@@ -59,7 +63,7 @@ internal sealed partial class FormattedFallbackItem : FallbackCommandItem
     {
         CancelRequest();
         var requestVersion = Interlocked.Increment(ref _requestVersion);
-        Command = new NoOpCommand();
+        _copyCommand.SetText(null);
 
         if (string.IsNullOrWhiteSpace(query) ||
             _endpointMonitor.Status != LlmEndpointStatus.Available ||
@@ -130,7 +134,7 @@ internal sealed partial class FormattedFallbackItem : FallbackCommandItem
     {
         if (!cancellationToken.IsCancellationRequested && requestVersion == _requestVersion)
         {
-            Command = canCopy ? new CopyTextCommand(title) : new NoOpCommand();
+            _copyCommand.SetText(canCopy ? title : null);
             Title = title;
         }
     }
@@ -139,7 +143,7 @@ internal sealed partial class FormattedFallbackItem : FallbackCommandItem
     {
         CancelRequest();
         Interlocked.Increment(ref _requestVersion);
-        Command = new NoOpCommand();
+        _copyCommand.SetText(null);
         Title = string.Empty;
     }
 
@@ -160,4 +164,10 @@ internal sealed partial class FormattedFallbackItem : FallbackCommandItem
         _requestCancellation?.Dispose();
         _requestCancellation = null;
     }
+
+    private static string GetFallbackId(string definitionId) =>
+        $"CommandPaletteLLM.Global.{definitionId}";
+
+    private static StableCopyTextCommand CreateCopyCommand(string definitionId) =>
+        new($"{GetFallbackId(definitionId)}.Copy");
 }

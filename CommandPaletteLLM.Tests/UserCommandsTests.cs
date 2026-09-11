@@ -45,24 +45,28 @@ public sealed class UserCommandsTests
         Assert.Equal("{}", definition.OutputFormat);
         Assert.Equal(650, definition.SendDelayMilliseconds);
         Assert.Equal(1, definition.ResponseVariations);
+        Assert.Equal(CommandExposure.FallbackCommand, definition.Exposure);
+        Assert.True(definition.EnableGlobalFallback);
+        Assert.Equal("default", definition.ProviderId);
         Assert.Equal(1, itemsChanged);
         var command = Assert.Single(provider.TopLevelCommands());
         Assert.Equal("Greeting", command.Title);
         Assert.Equal($"CommandPaletteLLM.Command.{definition.Id}", command.Command.Id);
-        var fallback = Assert.IsType<FormattedFallbackItem>(Assert.Single(provider.FallbackCommands()));
-        Assert.Equal("Greeting", fallback.DisplayTitle);
-        Assert.Equal($"CommandPaletteLLM.Global.{definition.Id}", fallback.Id);
+        Assert.Single(provider.FallbackCommands());
     }
 
     [Fact]
     public void Settings_EditsCommandWithoutChangingItsIdentity()
     {
         var provider = CreateProvider(out var store);
-        AddCommand(store, "Greeting", "Hello {}!", "stable-id");
+        AddCommand(
+            store,
+            "Greeting",
+            "Hello {}!",
+            "stable-id",
+            exposure: CommandExposure.GlobalResult);
         provider = new CommandPaletteLLMCommandsProvider(store);
         var originalCommandId = Assert.Single(provider.TopLevelCommands()).Command.Id;
-        var originalFallbackId = Assert.IsType<FormattedFallbackItem>(
-            Assert.Single(provider.FallbackCommands())).Id;
         var form = GetSettingsForm(provider);
 
         form.SubmitForm(
@@ -70,9 +74,7 @@ public sealed class UserCommandsTests
             """{"actionId":"save:stable-id"}""");
 
         Assert.Equal(originalCommandId, Assert.Single(provider.TopLevelCommands()).Command.Id);
-        Assert.Equal(
-            originalFallbackId,
-            Assert.IsType<FormattedFallbackItem>(Assert.Single(provider.FallbackCommands())).Id);
+        Assert.Single(provider.FallbackCommands());
         Assert.Equal("Welcome", Assert.Single(provider.TopLevelCommands()).Title);
         Assert.Equal(125, Assert.Single(store.GetCommands()).SendDelayMilliseconds);
         Assert.Equal(3, Assert.Single(store.GetCommands()).ResponseVariations);
@@ -132,13 +134,20 @@ public sealed class UserCommandsTests
         Assert.Contains("Save changes", form.TemplateJson, StringComparison.Ordinal);
         Assert.Contains("\"id\":\"save:stable-id\"", form.TemplateJson, StringComparison.Ordinal);
         Assert.Contains("\"id\":\"delete:stable-id\"", form.TemplateJson, StringComparison.Ordinal);
-        Assert.Contains("Action.ToggleVisibility", form.TemplateJson, StringComparison.Ordinal);
+        Assert.Contains("\"id\":\"edit:stable-id\"", form.TemplateJson, StringComparison.Ordinal);
+        Assert.Contains("\"id\":\"cancel:stable-id\"", form.TemplateJson, StringComparison.Ordinal);
         Assert.Contains("\"isVisible\":false", form.TemplateJson, StringComparison.Ordinal);
         Assert.Contains("Edit command", form.TemplateJson, StringComparison.Ordinal);
         Assert.Contains("Delete command", form.TemplateJson, StringComparison.Ordinal);
         Assert.Contains("Cancel editing", form.TemplateJson, StringComparison.Ordinal);
         Assert.Contains("Send delay (milliseconds)", form.TemplateJson, StringComparison.Ordinal);
         Assert.Contains("Response variations", form.TemplateJson, StringComparison.Ordinal);
+        Assert.Contains("Enable as fallback command", form.TemplateJson, StringComparison.Ordinal);
+        Assert.Contains("\"type\":\"Input.Toggle\"", form.TemplateJson, StringComparison.Ordinal);
+        Assert.DoesNotContain("Command Palette placement", form.TemplateJson, StringComparison.Ordinal);
+        Assert.DoesNotContain("Global result", form.TemplateJson, StringComparison.Ordinal);
+        Assert.Contains("LLM provider", form.TemplateJson, StringComparison.Ordinal);
+        Assert.Contains("Custom icon file", form.TemplateJson, StringComparison.Ordinal);
         Assert.Contains("\"type\":\"Input.Number\"", form.TemplateJson, StringComparison.Ordinal);
         Assert.Contains("\"id\":\"add\"", form.TemplateJson, StringComparison.Ordinal);
     }
@@ -155,6 +164,175 @@ public sealed class UserCommandsTests
 
         Assert.Equal(CommandResultKind.KeepOpen, result.Kind);
         Assert.Equal("Greeting", Assert.Single(store.GetCommands()).Name);
+    }
+
+    [Fact]
+    public void Settings_TogglesFallbackWithoutRemovingTheCommand()
+    {
+        var provider = CreateProvider(out var store);
+        AddCommand(store, "Summarize", "Summarize: {}", "summarize");
+        provider = new CommandPaletteLLMCommandsProvider(store);
+        var form = GetSettingsForm(provider);
+
+        form.SubmitForm(
+            """{"fallback_summarize":"false"}""",
+            """{"actionId":"save:summarize"}""");
+
+        Assert.Equal(CommandExposure.None, Assert.Single(store.GetCommands()).Exposure);
+        Assert.False(Assert.Single(store.GetCommands()).EnableGlobalFallback);
+        Assert.Empty(provider.FallbackCommands());
+        Assert.Single(provider.TopLevelCommands());
+
+        form.SubmitForm(
+            """{"fallback_summarize":"true"}""",
+            """{"actionId":"save:summarize"}""");
+
+        Assert.Equal(CommandExposure.FallbackCommand, Assert.Single(store.GetCommands()).Exposure);
+        Assert.True(Assert.Single(store.GetCommands()).EnableGlobalFallback);
+        Assert.Single(provider.FallbackCommands());
+        Assert.Single(provider.TopLevelCommands());
+
+    }
+
+    [Fact]
+    public void Settings_SavingOneCommandCollapsesOnlyThatEditorAndPreservesOtherDrafts()
+    {
+        var provider = CreateProvider(out var store);
+        AddCommand(store, "First", "First: {}", "first");
+        AddCommand(store, "Second", "Second: {}", "second");
+        provider = new CommandPaletteLLMCommandsProvider(store);
+        var form = GetSettingsForm(provider);
+        form.SubmitForm("{}", """{"actionId":"edit:first"}""");
+        form.SubmitForm(
+            """{"name_first":"Unsaved first"}""",
+            """{"actionId":"edit:second"}""");
+
+        Assert.Contains("\"id\":\"editor_first\",\"isVisible\":true", form.TemplateJson, StringComparison.Ordinal);
+        Assert.Contains("\"id\":\"editor_second\",\"isVisible\":true", form.TemplateJson, StringComparison.Ordinal);
+
+        form.SubmitForm(
+            """{"name_first":"Updated first","name_second":"Unsaved second"}""",
+            """{"actionId":"save:first"}""");
+
+        Assert.Equal("Updated first", store.GetCommands()[0].Name);
+        Assert.Equal("Second", store.GetCommands()[1].Name);
+        Assert.Contains("\"id\":\"editor_first\",\"isVisible\":false", form.TemplateJson, StringComparison.Ordinal);
+        Assert.Contains("\"id\":\"editor_second\",\"isVisible\":true", form.TemplateJson, StringComparison.Ordinal);
+        Assert.Contains("\"id\":\"name_second\",\"label\":\"Command name\",\"value\":\"Unsaved second\"", form.TemplateJson, StringComparison.Ordinal);
+
+        form.SubmitForm(
+            """{"name_second":"Unsaved second"}""",
+            """{"actionId":"cancel:second"}""");
+
+        Assert.Contains("\"id\":\"editor_second\",\"isVisible\":false", form.TemplateJson, StringComparison.Ordinal);
+        Assert.DoesNotContain("Unsaved second", form.TemplateJson, StringComparison.Ordinal);
+        Assert.Equal("Second", store.GetCommands()[1].Name);
+    }
+
+    [Fact]
+    public void Settings_SavingOneProviderCollapsesOnlyThatEditorAndPreservesOtherDrafts()
+    {
+        var commandStore = new UserCommandStore(filePath: null);
+        var providerStore = new LlmProviderSettingsStore(filePath: null);
+        providerStore.ReplaceAll(
+        [
+            new LlmProviderSettings { Id = "default", Name = "Local" },
+            new LlmProviderSettings { Id = "remote", Name = "Remote" },
+        ]);
+        var provider = new CommandPaletteLLMCommandsProvider(commandStore, providerStore);
+        var form = GetSettingsForm(provider);
+
+        form.SubmitForm("{}", """{"actionId":"edit-provider:default"}""");
+        form.SubmitForm(
+            """{"providerName_default":"Local draft"}""",
+            """{"actionId":"edit-provider:remote"}""");
+        form.SubmitForm(
+            """{"providerName_default":"Saved local","providerName_remote":"Remote draft"}""",
+            """{"actionId":"save-provider:default"}""");
+
+        Assert.Equal("Saved local", providerStore.Get("default")!.Name);
+        Assert.Equal("Remote", providerStore.Get("remote")!.Name);
+        Assert.Contains("\"id\":\"provider_editor_default\",\"isVisible\":false", form.TemplateJson, StringComparison.Ordinal);
+        Assert.Contains("\"id\":\"provider_editor_remote\",\"isVisible\":true", form.TemplateJson, StringComparison.Ordinal);
+        Assert.Contains("\"id\":\"providerName_remote\",\"label\":\"Provider name\",\"value\":\"Remote draft\"", form.TemplateJson, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void Settings_AddsProvidersAndAssignsOneToACommand()
+    {
+        var store = new UserCommandStore(filePath: null);
+        var providerStore = new LlmProviderSettingsStore(filePath: null);
+        AddCommand(store, "Summarize", "Summarize: {}", "summarize");
+        var provider = new CommandPaletteLLMCommandsProvider(store, providerStore);
+        var form = GetSettingsForm(provider);
+
+        form.SubmitForm(
+            """{"newProviderName":"Remote LLM"}""",
+            """{"actionId":"add-provider"}""");
+        var remoteProvider = Assert.Single(
+            providerStore.GetProviders(),
+            item => item.Name == "Remote LLM");
+
+        form.SubmitForm(
+            $$"""{"provider_summarize":"{{remoteProvider.Id}}"}""",
+            """{"actionId":"save:summarize"}""");
+
+        Assert.Equal(remoteProvider.Id, Assert.Single(store.GetCommands()).ProviderId);
+        Assert.Contains("Input.ChoiceSet", form.TemplateJson, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void Settings_ClearsProviderApiKeyWithAButton()
+    {
+        var commandStore = new UserCommandStore(filePath: null);
+        var providerStore = new LlmProviderSettingsStore(filePath: null);
+        providerStore.Replace(new LlmProviderSettings { ApiKey = "secret" });
+        var provider = new CommandPaletteLLMCommandsProvider(commandStore, providerStore);
+        var form = GetSettingsForm(provider);
+
+        Assert.Contains("clear-provider-key:default", form.TemplateJson, StringComparison.Ordinal);
+        Assert.DoesNotContain("clearProviderApiKey", form.TemplateJson, StringComparison.Ordinal);
+
+        form.SubmitForm("{}", """{"actionId":"clear-provider-key:default"}""");
+
+        Assert.Empty(providerStore.Get().ApiKey);
+    }
+
+    [Fact]
+    public void Settings_ImportsCommandIconIntoManagedStorage()
+    {
+        var directory = Path.Combine(Path.GetTempPath(), $"CommandPaletteLLM.Tests-{Guid.NewGuid():N}");
+        var sourceIcon = Path.Combine(directory, "source.png");
+        var commandFile = Path.Combine(directory, "commands.json");
+
+        try
+        {
+            Directory.CreateDirectory(directory);
+            File.WriteAllBytes(sourceIcon, [1, 2, 3, 4]);
+            var store = new UserCommandStore(commandFile);
+            AddCommand(store, "Summarize", "Summarize: {}", "summarize");
+            var provider = new CommandPaletteLLMCommandsProvider(store);
+            var form = GetSettingsForm(provider);
+            var escapedPath = sourceIcon.Replace("\\", "\\\\", StringComparison.Ordinal);
+
+            form.SubmitForm(
+                $$"""{"icon_summarize":"{{escapedPath}}"}""",
+                """{"actionId":"save:summarize"}""");
+
+            var storedPath = Assert.Single(store.GetCommands()).IconPath;
+            Assert.NotEqual(sourceIcon, storedPath);
+            Assert.StartsWith(Path.Combine(directory, "Icons"), storedPath, StringComparison.OrdinalIgnoreCase);
+            Assert.Equal([1, 2, 3, 4], File.ReadAllBytes(storedPath));
+            File.Delete(sourceIcon);
+            Assert.True(File.Exists(storedPath));
+        }
+        finally
+        {
+            if (Directory.Exists(directory))
+            {
+                Directory.Delete(directory, recursive: true);
+            }
+        }
     }
 
     [Fact]
@@ -238,8 +416,39 @@ public sealed class UserCommandsTests
         Assert.Equal("This is the answer.", fallback.Title);
         Assert.Equal(
             "This is the answer.",
-            Assert.IsType<CopyTextCommand>(fallback.Command).Text);
+            Assert.IsType<StableCopyTextCommand>(fallback.Command).Text);
         Assert.Equal("Hello Maxim!", Assert.Single(client.Prompts));
+    }
+
+    [Fact]
+    public void FormattedFallback_KeepsStableIdentityAcrossEndpointChanges()
+    {
+        var monitor = new ControllableEndpointMonitor(LlmEndpointStatus.Available);
+        var fallback = new FormattedFallbackItem(
+            new UserCommandDefinition
+            {
+                Id = "summarize",
+                Name = "Summarize",
+                OutputFormat = "Summarize: {}",
+            },
+            new RecordingLlmClient("Summary"),
+            TimeSpan.Zero,
+            endpointMonitor: monitor);
+        var command = Assert.IsType<StableCopyTextCommand>(fallback.Command);
+        var fallbackId = fallback.Id;
+        var commandId = command.Id;
+
+        fallback.FallbackHandler!.UpdateQuery("Text");
+        monitor.SetStatus(LlmEndpointStatus.Unavailable);
+        fallback.EndpointStatusChanged(allowGlobalResults: true);
+        monitor.SetStatus(LlmEndpointStatus.Available);
+        fallback.EndpointStatusChanged(allowGlobalResults: true);
+
+        var currentCommand = Assert.IsType<StableCopyTextCommand>(fallback.Command);
+        Assert.Same(command, currentCommand);
+        Assert.Equal(fallbackId, fallback.Id);
+        Assert.Equal(commandId, currentCommand.Id);
+        Assert.Equal($"{fallback.Id}.Copy", currentCommand.Id);
     }
 
     [Fact]
@@ -327,16 +536,23 @@ public sealed class UserCommandsTests
     public void Provider_CancelsRequestsAcrossRootAndCommandPageNavigation()
     {
         var store = new UserCommandStore(filePath: null);
-        AddCommand(store, "Summarize", "Summarize: {}", "summarize", sendDelayMilliseconds: 0);
+        AddCommand(
+            store,
+            "Summarize",
+            "Summarize: {}",
+            "summarize",
+            sendDelayMilliseconds: 0,
+            exposure: CommandExposure.GlobalResult);
+        AddCommand(store, "Ask", "Ask: {}", "ask", sendDelayMilliseconds: 0);
         var client = new ControlledLlmClient();
         var provider = new CommandPaletteLLMCommandsProvider(
             store,
             new LlmProviderSettingsStore(filePath: null),
             client);
         var page = Assert.IsType<FormattedCommandPage>(
-            Assert.Single(provider.TopLevelCommands()).Command);
+            Assert.Single(provider.TopLevelCommands(), item => item.Title == "Summarize").Command);
         var fallback = Assert.IsType<FormattedFallbackItem>(
-            Assert.Single(provider.FallbackCommands()));
+            Assert.Single(provider.FallbackCommands(), item => item.DisplayTitle == "Ask"));
 
         fallback.FallbackHandler!.UpdateQuery("text to summarize");
         var fallbackRequest = Assert.Single(client.Requests);
@@ -357,14 +573,21 @@ public sealed class UserCommandsTests
     public void Fallback_DoesNotSendWhenQueryMatchesACommandName()
     {
         var store = new UserCommandStore(filePath: null);
-        AddCommand(store, "Summarize", "Summarize: {}", "summarize", sendDelayMilliseconds: 0);
+        AddCommand(
+            store,
+            "Summarize",
+            "Summarize: {}",
+            "summarize",
+            sendDelayMilliseconds: 0,
+            exposure: CommandExposure.GlobalResult);
+        AddCommand(store, "Ask", "Ask: {}", "ask", sendDelayMilliseconds: 0);
         var client = new RecordingLlmClient("unused");
         var provider = new CommandPaletteLLMCommandsProvider(
             store,
             new LlmProviderSettingsStore(filePath: null),
             client);
         var fallback = Assert.IsType<FormattedFallbackItem>(
-            Assert.Single(provider.FallbackCommands()));
+            Assert.Single(provider.FallbackCommands(), item => item.DisplayTitle == "Ask"));
 
         fallback.FallbackHandler!.UpdateQuery("  summarize  ");
 
@@ -425,6 +648,41 @@ public sealed class UserCommandsTests
     }
 
     [Fact]
+    public async Task OpenAiClient_UsesTheSelectedProvider()
+    {
+        var store = new LlmProviderSettingsStore(filePath: null);
+        store.ReplaceAll(
+        [
+            new LlmProviderSettings
+            {
+                Id = "first",
+                Name = "First",
+                BaseUrl = "http://127.0.0.1:8080/v1",
+                Model = "first-model",
+            },
+            new LlmProviderSettings
+            {
+                Id = "second",
+                Name = "Second",
+                BaseUrl = "https://second.example/v1",
+                Model = "second-model",
+            },
+        ]);
+        var handler = new RecordingHttpMessageHandler(
+            """{"choices":[{"message":{"role":"assistant","content":"answer"}}]}""");
+        var client = new OpenAiCompatibleLlmClient(
+            store,
+            "second",
+            new HttpClient(handler));
+
+        await client.CompleteAsync("Prompt", 1, CancellationToken.None);
+
+        Assert.Equal("https://second.example/v1/chat/completions", handler.RequestUri?.ToString());
+        using var requestJson = JsonDocument.Parse(Assert.IsType<string>(handler.RequestBody));
+        Assert.Equal("second-model", requestJson.RootElement.GetProperty("model").GetString());
+    }
+
+    [Fact]
     public async Task EndpointMonitor_ProbesModelsEndpointWithAuthentication()
     {
         var store = new LlmProviderSettingsStore(filePath: null);
@@ -470,6 +728,28 @@ public sealed class UserCommandsTests
         Assert.Equal("Summarize: some long text", Assert.Single(client.Prompts));
     }
 
+    [Fact]
+    public void EndpointChanges_DoNotReregisterFallbackCommands()
+    {
+        var store = new UserCommandStore(filePath: null);
+        AddCommand(store, "Summarize", "Summarize: {}", "summarize", sendDelayMilliseconds: 0);
+        var monitor = new ControllableEndpointMonitor(LlmEndpointStatus.Available);
+        var provider = new CommandPaletteLLMCommandsProvider(
+            store,
+            new LlmProviderSettingsStore(filePath: null),
+            new RecordingLlmClient("summary"),
+            monitor);
+        var originalFallback = Assert.Single(provider.FallbackCommands());
+        var itemsChanged = 0;
+        provider.ItemsChanged += (_, _) => itemsChanged++;
+
+        monitor.SetStatus(LlmEndpointStatus.Unavailable);
+        monitor.SetStatus(LlmEndpointStatus.Available);
+
+        Assert.Same(originalFallback, Assert.Single(provider.FallbackCommands()));
+        Assert.Equal(0, itemsChanged);
+    }
+
     [Theory]
     [InlineData("{} + {}", "Maxim", "Maxim + Maxim")]
     [InlineData("{{{}}}", "Maxim", "{Maxim}")]
@@ -503,7 +783,13 @@ public sealed class UserCommandsTests
         try
         {
             var store = new UserCommandStore(filePath);
-            AddCommand(store, "Greeting", "Hello {}!", "persistent-id");
+            AddCommand(
+                store,
+                "Greeting",
+                "Hello {}!",
+                "persistent-id",
+                enableGlobalFallback: false,
+                exposure: CommandExposure.Unspecified);
 
             var reloaded = new UserCommandStore(filePath);
 
@@ -513,6 +799,37 @@ public sealed class UserCommandsTests
             Assert.Equal("Hello {}!", command.OutputFormat);
             Assert.Equal(650, command.SendDelayMilliseconds);
             Assert.Equal(1, command.ResponseVariations);
+            Assert.False(command.EnableGlobalFallback);
+            Assert.Equal(CommandExposure.None, command.EffectiveExposure);
+            Assert.Equal("default", command.ProviderId);
+            Assert.Empty(command.IconPath);
+        }
+        finally
+        {
+            if (Directory.Exists(directory))
+            {
+                Directory.Delete(directory, recursive: true);
+            }
+        }
+    }
+
+    [Fact]
+    public void Store_LegacyCommandsDefaultToEnabledGlobalFallback()
+    {
+        var directory = Path.Combine(Path.GetTempPath(), $"CommandPaletteLLM.Tests-{Guid.NewGuid():N}");
+        var filePath = Path.Combine(directory, "commands.json");
+
+        try
+        {
+            Directory.CreateDirectory(directory);
+            File.WriteAllText(
+                filePath,
+                """[{"Id":"legacy","Name":"Legacy","OutputFormat":"{}","SendDelayMilliseconds":650,"ResponseVariations":1}]""");
+
+            var command = Assert.Single(new UserCommandStore(filePath).GetCommands());
+
+            Assert.True(command.EnableGlobalFallback);
+            Assert.Equal(CommandExposure.FallbackCommand, command.EffectiveExposure);
         }
         finally
         {
@@ -554,6 +871,37 @@ public sealed class UserCommandsTests
         }
     }
 
+    [Fact]
+    public void ProviderStore_MigratesTheLegacySingleProviderFile()
+    {
+        var directory = Path.Combine(Path.GetTempPath(), $"CommandPaletteLLM.Tests-{Guid.NewGuid():N}");
+        var providersPath = Path.Combine(directory, "providers.json");
+        var legacyPath = Path.Combine(directory, "provider.json");
+
+        try
+        {
+            Directory.CreateDirectory(directory);
+            File.WriteAllText(
+                legacyPath,
+                """{"BaseUrl":"https://legacy.example/v1","Model":"legacy-model","ApiKey":"key"}""");
+
+            var provider = Assert.Single(
+                new LlmProviderSettingsStore(providersPath, legacyPath).GetProviders());
+
+            Assert.Equal("default", provider.Id);
+            Assert.Equal("Local LLM", provider.Name);
+            Assert.Equal("https://legacy.example/v1", provider.BaseUrl);
+            Assert.Equal("legacy-model", provider.Model);
+        }
+        finally
+        {
+            if (Directory.Exists(directory))
+            {
+                Directory.Delete(directory, recursive: true);
+            }
+        }
+    }
+
     private static CommandPaletteLLMCommandsProvider CreateProvider(out UserCommandStore store)
     {
         store = new UserCommandStore(filePath: null);
@@ -573,7 +921,9 @@ public sealed class UserCommandsTests
         string name,
         string outputFormat,
         string id,
-        int sendDelayMilliseconds = 650)
+        int sendDelayMilliseconds = 650,
+        bool enableGlobalFallback = true,
+        CommandExposure exposure = CommandExposure.FallbackCommand)
     {
         var commands = store.GetCommands().Select(command => command.Clone()).ToList();
         commands.Add(new UserCommandDefinition
@@ -583,6 +933,10 @@ public sealed class UserCommandsTests
             OutputFormat = outputFormat,
             SendDelayMilliseconds = sendDelayMilliseconds,
             ResponseVariations = 1,
+            Exposure = exposure,
+            EnableGlobalFallback = exposure == CommandExposure.Unspecified
+                ? enableGlobalFallback
+                : exposure == CommandExposure.FallbackCommand,
         });
         store.ReplaceAll(commands);
     }

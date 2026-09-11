@@ -26,6 +26,8 @@ internal sealed class UserCommandStore
         _commands = LoadCommands();
     }
 
+    internal string? StorageDirectory => _filePath is null ? null : Path.GetDirectoryName(_filePath);
+
     public IReadOnlyList<UserCommandDefinition> GetCommands()
     {
         lock (_sync)
@@ -105,6 +107,10 @@ internal sealed class UserCommandStore
         !string.IsNullOrWhiteSpace(command.Id) &&
         !string.IsNullOrWhiteSpace(command.Name) &&
         !string.IsNullOrWhiteSpace(command.OutputFormat) &&
+        !string.IsNullOrWhiteSpace(command.ProviderId) &&
+        command.EffectiveExposure is (CommandExposure.None or
+            CommandExposure.FallbackCommand or
+            CommandExposure.GlobalResult) &&
         command.SendDelayMilliseconds is >= 0 and <= 10_000 &&
         command.ResponseVariations is >= 1 and <= 10 &&
         OutputFormatter.TryFormat(command.OutputFormat, string.Empty, out _, out _);

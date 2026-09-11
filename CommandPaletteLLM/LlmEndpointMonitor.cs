@@ -14,6 +14,7 @@ internal sealed class LlmEndpointMonitor : ILlmEndpointMonitor
 
     private readonly object _sync = new();
     private readonly LlmProviderSettingsStore _settingsStore;
+    private readonly string _providerId;
     private readonly HttpClient _httpClient;
     private Task<bool>? _activeCheck;
     private DateTimeOffset _lastCheck = DateTimeOffset.MinValue;
@@ -21,16 +22,25 @@ internal sealed class LlmEndpointMonitor : ILlmEndpointMonitor
     private int _generation;
 
     public LlmEndpointMonitor(LlmProviderSettingsStore settingsStore)
-        : this(settingsStore, SharedHttpClient)
+        : this(settingsStore, "default", SharedHttpClient)
     {
     }
 
     internal LlmEndpointMonitor(
         LlmProviderSettingsStore settingsStore,
         HttpClient httpClient)
+        : this(settingsStore, "default", httpClient)
+    {
+    }
+
+    internal LlmEndpointMonitor(
+        LlmProviderSettingsStore settingsStore,
+        string providerId,
+        HttpClient? httpClient = null)
     {
         _settingsStore = settingsStore;
-        _httpClient = httpClient;
+        _providerId = providerId;
+        _httpClient = httpClient ?? SharedHttpClient;
     }
 
     public LlmEndpointStatus Status
@@ -101,8 +111,8 @@ internal sealed class LlmEndpointMonitor : ILlmEndpointMonitor
         int generation,
         CancellationToken cancellationToken)
     {
-        var settings = _settingsStore.Get();
-        if (!LlmProviderSettingsStore.IsValid(settings))
+        var settings = _settingsStore.Get(_providerId);
+        if (settings is null || !LlmProviderSettingsStore.IsValid(settings))
         {
             ReportProbeResult(LlmEndpointStatus.Unavailable, generation);
             return false;

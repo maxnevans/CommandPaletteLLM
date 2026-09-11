@@ -2,6 +2,10 @@ namespace CommandPaletteLLM;
 
 internal sealed class LlmProviderSettings
 {
+    public string Id { get; set; } = "default";
+
+    public string Name { get; set; } = "Local LLM";
+
     public string BaseUrl { get; set; } = "http://127.0.0.1:8080/v1";
 
     public string Model { get; set; } = "local-model";
@@ -10,6 +14,8 @@ internal sealed class LlmProviderSettings
 
     public LlmProviderSettings Clone() => new()
     {
+        Id = Id,
+        Name = Name,
         BaseUrl = BaseUrl,
         Model = Model,
         ApiKey = ApiKey,

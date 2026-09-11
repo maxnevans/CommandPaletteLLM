@@ -1,4 +1,14 @@
+using System.Text.Json.Serialization;
+
 namespace CommandPaletteLLM;
+
+internal enum CommandExposure
+{
+    Unspecified,
+    None,
+    FallbackCommand,
+    GlobalResult,
+}
 
 internal sealed class UserCommandDefinition
 {
@@ -12,6 +22,20 @@ internal sealed class UserCommandDefinition
 
     public int ResponseVariations { get; set; } = 1;
 
+    public string ProviderId { get; set; } = "default";
+
+    public CommandExposure Exposure { get; set; }
+
+    public string IconPath { get; set; } = string.Empty;
+
+    // Retained to migrate settings written by versions that used a boolean toggle.
+    public bool EnableGlobalFallback { get; set; } = true;
+
+    [JsonIgnore]
+    public CommandExposure EffectiveExposure => Exposure == CommandExposure.Unspecified
+        ? EnableGlobalFallback ? CommandExposure.FallbackCommand : CommandExposure.None
+        : Exposure;
+
     public UserCommandDefinition Clone() => new()
     {
         Id = Id,
@@ -19,5 +43,9 @@ internal sealed class UserCommandDefinition
         OutputFormat = OutputFormat,
         SendDelayMilliseconds = SendDelayMilliseconds,
         ResponseVariations = ResponseVariations,
+        ProviderId = ProviderId,
+        Exposure = Exposure,
+        IconPath = IconPath,
+        EnableGlobalFallback = EnableGlobalFallback,
     };
 }

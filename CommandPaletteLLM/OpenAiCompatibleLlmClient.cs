@@ -19,18 +19,20 @@ internal sealed class OpenAiCompatibleLlmClient : ILlmClient
     };
 
     private readonly LlmProviderSettingsStore _settingsStore;
+    private readonly string _providerId;
     private readonly HttpClient _httpClient;
     private readonly ILlmEndpointMonitor _endpointMonitor;
 
     public OpenAiCompatibleLlmClient(LlmProviderSettingsStore settingsStore)
-        : this(settingsStore, SharedHttpClient, new LlmEndpointMonitor(settingsStore))
+        : this(settingsStore, "default", SharedHttpClient, new LlmEndpointMonitor(settingsStore, "default"))
     {
     }
 
     internal OpenAiCompatibleLlmClient(
         LlmProviderSettingsStore settingsStore,
-        ILlmEndpointMonitor endpointMonitor)
-        : this(settingsStore, SharedHttpClient, endpointMonitor)
+        ILlmEndpointMonitor endpointMonitor,
+        string providerId = "default")
+        : this(settingsStore, providerId, SharedHttpClient, endpointMonitor)
     {
     }
 
@@ -38,8 +40,18 @@ internal sealed class OpenAiCompatibleLlmClient : ILlmClient
         LlmProviderSettingsStore settingsStore,
         HttpClient httpClient,
         ILlmEndpointMonitor? endpointMonitor = null)
+        : this(settingsStore, "default", httpClient, endpointMonitor)
+    {
+    }
+
+    internal OpenAiCompatibleLlmClient(
+        LlmProviderSettingsStore settingsStore,
+        string providerId,
+        HttpClient httpClient,
+        ILlmEndpointMonitor? endpointMonitor = null)
     {
         _settingsStore = settingsStore;
+        _providerId = providerId;
         _httpClient = httpClient;
         _endpointMonitor = endpointMonitor ?? new AssumedAvailableEndpointMonitor();
     }
@@ -49,8 +61,8 @@ internal sealed class OpenAiCompatibleLlmClient : ILlmClient
         int variations,
         CancellationToken cancellationToken)
     {
-        var settings = _settingsStore.Get();
-        if (!LlmProviderSettingsStore.IsValid(settings))
+        var settings = _settingsStore.Get(_providerId);
+        if (settings is null || !LlmProviderSettingsStore.IsValid(settings))
         {
             throw new LlmRequestException("Configure a valid provider URL and model in extension settings.");
         }

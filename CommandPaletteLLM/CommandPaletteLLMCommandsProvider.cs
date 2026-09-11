@@ -1,6 +1,7 @@
 using Microsoft.CommandPalette.Extensions;
 using Microsoft.CommandPalette.Extensions.Toolkit;
 using System;
+using System.Collections.Generic;
 using System.Linq;
 using System.Threading;
 
@@ -10,8 +11,9 @@ public partial class CommandPaletteLLMCommandsProvider : CommandProvider
 {
     private readonly UserCommandStore _store;
     private readonly LlmProviderSettingsStore _providerSettingsStore;
-    private readonly ILlmClient _llmClient;
-    private readonly ILlmEndpointMonitor _endpointMonitor;
+    private readonly ILlmClient? _llmClientOverride;
+    private readonly ILlmEndpointMonitor? _endpointMonitorOverride;
+    private readonly Dictionary<string, ProviderRuntime> _providerRuntimes = [];
     private FormattedCommandPage[] _commandPages = [];
     private FormattedFallbackItem[] _formattedFallbackItems = [];
     private bool _commandPageActive;
@@ -39,13 +41,10 @@ public partial class CommandPaletteLLMCommandsProvider : CommandProvider
     {
         _store = store;
         _providerSettingsStore = providerSettingsStore;
-        _endpointMonitor = endpointMonitor ?? (llmClient is null
-            ? new LlmEndpointMonitor(_providerSettingsStore)
+        _llmClientOverride = llmClient;
+        _endpointMonitorOverride = endpointMonitor ?? (llmClient is null
+            ? null
             : new AssumedAvailableEndpointMonitor());
-        _llmClient = llmClient ?? new OpenAiCompatibleLlmClient(
-            _providerSettingsStore,
-            _endpointMonitor);
-        _endpointMonitor.StatusChanged += EndpointStatusChanged;
         DisplayName = "Command Palette LLM";
         Icon = IconHelpers.FromRelativePath("Assets\\StoreLogo.png");
         Frozen = false;
@@ -55,7 +54,7 @@ public partial class CommandPaletteLLMCommandsProvider : CommandProvider
             ReloadCommands,
             ProviderSettingsChanged);
         ReloadCommands(raiseItemsChanged: false);
-        _ = _endpointMonitor.CheckAsync(force: true, CancellationToken.None);
+        CheckProviderConnections();
     }
 
     public override ICommandItem[] TopLevelCommands() => _commands;
@@ -78,11 +77,15 @@ public partial class CommandPaletteLLMCommandsProvider : CommandProvider
             .Select(definition => definition.Name)
             .ToHashSet(StringComparer.OrdinalIgnoreCase);
         _commandPages = definitions
-            .Select(definition => new FormattedCommandPage(
-                definition,
-                _llmClient,
-                pageAccessed: CommandPageAccessed,
-                endpointMonitor: _endpointMonitor))
+            .Select(definition =>
+            {
+                var runtime = GetProviderRuntime(definition.ProviderId);
+                return new FormattedCommandPage(
+                    definition,
+                    runtime.Client,
+                    pageAccessed: CommandPageAccessed,
+                    endpointMonitor: runtime.Monitor);
+            })
             .ToArray();
         _commands = _commandPages
             .Select(page => (ICommandItem)new CommandItem(page)
@@ -91,12 +94,17 @@ public partial class CommandPaletteLLMCommandsProvider : CommandProvider
             })
             .ToArray();
         _formattedFallbackItems = definitions
-            .Select(definition => new FormattedFallbackItem(
-                definition,
-                _llmClient,
-                isTopLevelCommandQuery: query => commandNames.Contains(query.Trim()),
-                rootQueryObserved: RootQueryObserved,
-                endpointMonitor: _endpointMonitor))
+            .Where(definition => definition.EffectiveExposure != CommandExposure.None)
+            .Select(definition =>
+            {
+                var runtime = GetProviderRuntime(definition.ProviderId);
+                return new FormattedFallbackItem(
+                    definition,
+                    runtime.Client,
+                    isTopLevelCommandQuery: query => commandNames.Contains(query.Trim()),
+                    rootQueryObserved: RootQueryObserved,
+                    endpointMonitor: runtime.Monitor);
+            })
             .ToArray();
         _fallbackCommands = _formattedFallbackItems
             .Cast<IFallbackCommandItem>()
@@ -106,6 +114,8 @@ public partial class CommandPaletteLLMCommandsProvider : CommandProvider
         {
             RaiseItemsChanged();
         }
+
+        CheckProviderConnections();
     }
 
     private void CancelFallbackRequests()
@@ -128,13 +138,17 @@ public partial class CommandPaletteLLMCommandsProvider : CommandProvider
     {
         _commandPageActive = true;
         CancelFallbackRequests();
-        _ = _endpointMonitor.CheckAsync(force: true, CancellationToken.None);
+        CheckProviderConnections(force: true);
     }
 
     private void ProviderSettingsChanged()
     {
-        _endpointMonitor.Invalidate();
-        _ = _endpointMonitor.CheckAsync(force: true, CancellationToken.None);
+        foreach (var runtime in _providerRuntimes.Values)
+        {
+            runtime.Monitor.Invalidate();
+        }
+
+        CheckProviderConnections(force: true);
     }
 
     private void EndpointStatusChanged()
@@ -150,4 +164,35 @@ public partial class CommandPaletteLLMCommandsProvider : CommandProvider
         _commandPageActive = false;
         CancelCommandPageRequests();
     }
+
+    private ProviderRuntime GetProviderRuntime(string providerId)
+    {
+        var resolvedId = _providerSettingsStore.Get(providerId)?.Id ??
+            _providerSettingsStore.Get().Id;
+        if (_providerRuntimes.TryGetValue(resolvedId, out var runtime))
+        {
+            return runtime;
+        }
+
+        var monitor = _endpointMonitorOverride ??
+            new LlmEndpointMonitor(_providerSettingsStore, resolvedId);
+        var client = _llmClientOverride ??
+            new OpenAiCompatibleLlmClient(_providerSettingsStore, monitor, resolvedId);
+        runtime = new ProviderRuntime(client, monitor);
+        _providerRuntimes.Add(resolvedId, runtime);
+        monitor.StatusChanged += EndpointStatusChanged;
+        return runtime;
+    }
+
+    private void CheckProviderConnections(bool force = false)
+    {
+        foreach (var monitor in _providerRuntimes.Values
+            .Select(runtime => runtime.Monitor)
+            .Distinct())
+        {
+            _ = monitor.CheckAsync(force, CancellationToken.None);
+        }
+    }
+
+    private sealed record ProviderRuntime(ILlmClient Client, ILlmEndpointMonitor Monitor);
 }

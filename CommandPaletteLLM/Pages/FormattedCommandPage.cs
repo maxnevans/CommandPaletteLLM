@@ -58,7 +58,7 @@ internal sealed partial class FormattedCommandPage : DynamicListPage, IDisposabl
         _pageAccessed = pageAccessed;
         _endpointMonitor = endpointMonitor ?? new AssumedAvailableEndpointMonitor();
         _endpointMonitor.StatusChanged += EndpointStatusChanged;
-        Icon = IconHelpers.FromRelativePath("Assets\\StoreLogo.png");
+        Icon = CommandIconStore.GetIcon(definition.IconPath);
         Id = $"CommandPaletteLLM.Command.{definition.Id}";
         Title = definition.Name;
         Name = "Open";
