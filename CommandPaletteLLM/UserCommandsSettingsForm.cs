@@ -14,15 +14,18 @@ internal sealed partial class UserCommandsSettingsForm : FormContent
     private readonly UserCommandStore _store;
     private readonly LlmProviderSettingsStore _providerSettingsStore;
     private readonly Action _commandsChanged;
+    private readonly Action _providerSettingsChanged;
 
     public UserCommandsSettingsForm(
         UserCommandStore store,
         LlmProviderSettingsStore providerSettingsStore,
-        Action commandsChanged)
+        Action commandsChanged,
+        Action providerSettingsChanged)
     {
         _store = store;
         _providerSettingsStore = providerSettingsStore;
         _commandsChanged = commandsChanged;
+        _providerSettingsChanged = providerSettingsChanged;
         Refresh();
     }
 
@@ -113,6 +116,7 @@ internal sealed partial class UserCommandsSettingsForm : FormContent
         }
 
         _providerSettingsStore.Replace(settings);
+        _providerSettingsChanged();
         Refresh();
         return CommandResult.KeepOpen();
     }

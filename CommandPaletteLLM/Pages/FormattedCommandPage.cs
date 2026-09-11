@@ -14,6 +14,8 @@ internal sealed partial class FormattedCommandPage : DynamicListPage
     private readonly ILlmClient _llmClient;
     private readonly TimeSpan _debounce;
     private readonly Action? _pageAccessed;
+    private readonly ILlmEndpointMonitor _endpointMonitor;
+    private bool _endpointCheckedForVisit;
     private CancellationTokenSource? _requestCancellation;
     private int _requestVersion;
     private IListItem[] _items = [];
@@ -30,12 +32,14 @@ internal sealed partial class FormattedCommandPage : DynamicListPage
         UserCommandDefinition definition,
         ILlmClient llmClient,
         TimeSpan? debounce = null,
-        Action? pageAccessed = null)
+        Action? pageAccessed = null,
+        ILlmEndpointMonitor? endpointMonitor = null)
     {
         _promptFormat = definition.OutputFormat;
         _llmClient = llmClient;
         _debounce = debounce ?? TimeSpan.FromMilliseconds(definition.SendDelayMilliseconds);
         _pageAccessed = pageAccessed;
+        _endpointMonitor = endpointMonitor ?? new AssumedAvailableEndpointMonitor();
         Icon = IconHelpers.FromRelativePath("Assets\\StoreLogo.png");
         Id = $"CommandPaletteLLM.Command.{definition.Id}";
         Title = definition.Name;
@@ -74,12 +78,18 @@ internal sealed partial class FormattedCommandPage : DynamicListPage
 
     public override IListItem[] GetItems()
     {
-        _pageAccessed?.Invoke();
+        if (!_endpointCheckedForVisit)
+        {
+            _endpointCheckedForVisit = true;
+            _pageAccessed?.Invoke();
+        }
+
         return _items;
     }
 
     internal void CancelPendingRequest()
     {
+        _endpointCheckedForVisit = false;
         if (_requestCancellation is null && _items.Length == 0 && !IsLoading)
         {
             return;
@@ -100,6 +110,16 @@ internal sealed partial class FormattedCommandPage : DynamicListPage
         try
         {
             await Task.Delay(_debounce, cancellationToken).ConfigureAwait(false);
+            if (!await _endpointMonitor.CheckAsync(force: false, cancellationToken)
+                .ConfigureAwait(false))
+            {
+                PublishError(
+                    requestVersion,
+                    "The provider endpoint is unavailable.",
+                    cancellationToken);
+                return;
+            }
+
             var response = await _llmClient.CompleteAsync(prompt, cancellationToken)
                 .ConfigureAwait(false);
             Publish(

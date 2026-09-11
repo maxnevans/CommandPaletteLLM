@@ -2,6 +2,7 @@ using Microsoft.CommandPalette.Extensions;
 using Microsoft.CommandPalette.Extensions.Toolkit;
 using System;
 using System.Linq;
+using System.Threading;
 
 namespace CommandPaletteLLM;
 
@@ -10,8 +11,10 @@ public partial class CommandPaletteLLMCommandsProvider : CommandProvider
     private readonly UserCommandStore _store;
     private readonly LlmProviderSettingsStore _providerSettingsStore;
     private readonly ILlmClient _llmClient;
+    private readonly ILlmEndpointMonitor _endpointMonitor;
     private FormattedCommandPage[] _commandPages = [];
     private FormattedFallbackItem[] _formattedFallbackItems = [];
+    private bool _commandPageActive;
     private ICommandItem[] _commands = [];
     private IFallbackCommandItem[] _fallbackCommands = [];
 
@@ -21,23 +24,38 @@ public partial class CommandPaletteLLMCommandsProvider : CommandProvider
     }
 
     internal CommandPaletteLLMCommandsProvider(UserCommandStore store)
-        : this(store, new LlmProviderSettingsStore(filePath: null))
+        : this(
+            store,
+            new LlmProviderSettingsStore(filePath: null),
+            endpointMonitor: new AssumedAvailableEndpointMonitor())
     {
     }
 
     internal CommandPaletteLLMCommandsProvider(
         UserCommandStore store,
         LlmProviderSettingsStore providerSettingsStore,
-        ILlmClient? llmClient = null)
+        ILlmClient? llmClient = null,
+        ILlmEndpointMonitor? endpointMonitor = null)
     {
         _store = store;
         _providerSettingsStore = providerSettingsStore;
-        _llmClient = llmClient ?? new OpenAiCompatibleLlmClient(_providerSettingsStore);
+        _endpointMonitor = endpointMonitor ?? (llmClient is null
+            ? new LlmEndpointMonitor(_providerSettingsStore)
+            : new AssumedAvailableEndpointMonitor());
+        _llmClient = llmClient ?? new OpenAiCompatibleLlmClient(
+            _providerSettingsStore,
+            _endpointMonitor);
+        _endpointMonitor.StatusChanged += EndpointStatusChanged;
         DisplayName = "Command Palette LLM";
         Icon = IconHelpers.FromRelativePath("Assets\\StoreLogo.png");
         Frozen = false;
-        Settings = new UserCommandsSettings(_store, _providerSettingsStore, ReloadCommands);
+        Settings = new UserCommandsSettings(
+            _store,
+            _providerSettingsStore,
+            ReloadCommands,
+            ProviderSettingsChanged);
         ReloadCommands(raiseItemsChanged: false);
+        _ = _endpointMonitor.CheckAsync(force: true, CancellationToken.None);
     }
 
     public override ICommandItem[] TopLevelCommands() => _commands;
@@ -50,6 +68,7 @@ public partial class CommandPaletteLLMCommandsProvider : CommandProvider
     {
         CancelFallbackRequests();
         CancelCommandPageRequests();
+        _commandPageActive = false;
         var definitions = _store.GetCommands();
         var commandNames = definitions
             .Select(definition => definition.Name)
@@ -58,7 +77,8 @@ public partial class CommandPaletteLLMCommandsProvider : CommandProvider
             .Select(definition => new FormattedCommandPage(
                 definition,
                 _llmClient,
-                pageAccessed: CancelFallbackRequests))
+                pageAccessed: CommandPageAccessed,
+                endpointMonitor: _endpointMonitor))
             .ToArray();
         _commands = _commandPages
             .Select(page => (ICommandItem)new CommandItem(page)
@@ -71,7 +91,8 @@ public partial class CommandPaletteLLMCommandsProvider : CommandProvider
                 definition,
                 _llmClient,
                 isTopLevelCommandQuery: query => commandNames.Contains(query.Trim()),
-                rootQueryObserved: CancelCommandPageRequests))
+                rootQueryObserved: RootQueryObserved,
+                endpointMonitor: _endpointMonitor))
             .ToArray();
         _fallbackCommands = _formattedFallbackItems
             .Cast<IFallbackCommandItem>()
@@ -97,5 +118,32 @@ public partial class CommandPaletteLLMCommandsProvider : CommandProvider
         {
             page.CancelPendingRequest();
         }
+    }
+
+    private void CommandPageAccessed()
+    {
+        _commandPageActive = true;
+        CancelFallbackRequests();
+        _ = _endpointMonitor.CheckAsync(force: true, CancellationToken.None);
+    }
+
+    private void ProviderSettingsChanged()
+    {
+        _endpointMonitor.Invalidate();
+        _ = _endpointMonitor.CheckAsync(force: true, CancellationToken.None);
+    }
+
+    private void EndpointStatusChanged()
+    {
+        foreach (var fallback in _formattedFallbackItems)
+        {
+            fallback.EndpointStatusChanged(allowGlobalResults: !_commandPageActive);
+        }
+    }
+
+    private void RootQueryObserved()
+    {
+        _commandPageActive = false;
+        CancelCommandPageRequests();
     }
 }

@@ -19,18 +19,28 @@ internal sealed class OpenAiCompatibleLlmClient : ILlmClient
 
     private readonly LlmProviderSettingsStore _settingsStore;
     private readonly HttpClient _httpClient;
+    private readonly ILlmEndpointMonitor _endpointMonitor;
 
     public OpenAiCompatibleLlmClient(LlmProviderSettingsStore settingsStore)
-        : this(settingsStore, SharedHttpClient)
+        : this(settingsStore, SharedHttpClient, new LlmEndpointMonitor(settingsStore))
     {
     }
 
     internal OpenAiCompatibleLlmClient(
         LlmProviderSettingsStore settingsStore,
-        HttpClient httpClient)
+        ILlmEndpointMonitor endpointMonitor)
+        : this(settingsStore, SharedHttpClient, endpointMonitor)
+    {
+    }
+
+    internal OpenAiCompatibleLlmClient(
+        LlmProviderSettingsStore settingsStore,
+        HttpClient httpClient,
+        ILlmEndpointMonitor? endpointMonitor = null)
     {
         _settingsStore = settingsStore;
         _httpClient = httpClient;
+        _endpointMonitor = endpointMonitor ?? new AssumedAvailableEndpointMonitor();
     }
 
     public async Task<string> CompleteAsync(
@@ -64,42 +74,61 @@ internal sealed class OpenAiCompatibleLlmClient : ILlmClient
                 settings.ApiKey.Trim());
         }
 
-        using var response = await _httpClient.SendAsync(
-            request,
-            HttpCompletionOption.ResponseHeadersRead,
-            cancellationToken).ConfigureAwait(false);
-        var responseJson = await response.Content.ReadAsStringAsync(cancellationToken)
-            .ConfigureAwait(false);
-
-        ChatCompletionResponse? completion = null;
+        HttpResponseMessage response;
         try
         {
-            completion = JsonSerializer.Deserialize(
-                responseJson,
-                CommandPaletteJsonContext.Default.ChatCompletionResponse);
+            response = await _httpClient.SendAsync(
+                request,
+                HttpCompletionOption.ResponseHeadersRead,
+                cancellationToken).ConfigureAwait(false);
         }
-        catch (JsonException) when (!response.IsSuccessStatusCode)
+        catch (OperationCanceledException) when (!cancellationToken.IsCancellationRequested)
         {
-            // The HTTP error below is more useful than a JSON parsing error.
+            _endpointMonitor.ReportUnreachable();
+            throw;
+        }
+        catch (HttpRequestException)
+        {
+            _endpointMonitor.ReportUnreachable();
+            throw;
         }
 
-        if (!response.IsSuccessStatusCode)
+        using (response)
         {
-            var detail = completion?.Error?.Message;
-            throw new LlmRequestException(string.IsNullOrWhiteSpace(detail)
-                ? $"The provider returned HTTP {(int)response.StatusCode}."
-                : $"The provider returned HTTP {(int)response.StatusCode}: {detail}");
-        }
+            _endpointMonitor.ReportReachable();
+            var responseJson = await response.Content.ReadAsStringAsync(cancellationToken)
+                .ConfigureAwait(false);
 
-        var content = completion?.Choices is { Count: > 0 }
-            ? completion.Choices[0].Message?.Content
-            : null;
-        if (string.IsNullOrWhiteSpace(content))
-        {
-            throw new LlmRequestException("The provider returned an empty response.");
-        }
+            ChatCompletionResponse? completion = null;
+            try
+            {
+                completion = JsonSerializer.Deserialize(
+                    responseJson,
+                    CommandPaletteJsonContext.Default.ChatCompletionResponse);
+            }
+            catch (JsonException) when (!response.IsSuccessStatusCode)
+            {
+                // The HTTP error below is more useful than a JSON parsing error.
+            }
 
-        return content.Trim();
+            if (!response.IsSuccessStatusCode)
+            {
+                var detail = completion?.Error?.Message;
+                throw new LlmRequestException(string.IsNullOrWhiteSpace(detail)
+                    ? $"The provider returned HTTP {(int)response.StatusCode}."
+                    : $"The provider returned HTTP {(int)response.StatusCode}: {detail}");
+            }
+
+            var content = completion?.Choices is { Count: > 0 }
+                ? completion.Choices[0].Message?.Content
+                : null;
+            if (string.IsNullOrWhiteSpace(content))
+            {
+                throw new LlmRequestException("The provider returned an empty response.");
+            }
+
+            return content.Trim();
+        }
     }
 
     private static Uri BuildChatCompletionsUri(string baseUrl)

@@ -336,6 +336,52 @@ public sealed class UserCommandsTests
             requestJson.RootElement.GetProperty("messages")[0].GetProperty("content").GetString());
     }
 
+    [Fact]
+    public async Task EndpointMonitor_ProbesModelsEndpointWithAuthentication()
+    {
+        var store = new LlmProviderSettingsStore(filePath: null);
+        store.Replace(new LlmProviderSettings
+        {
+            BaseUrl = "http://127.0.0.1:8080/v1/chat/completions",
+            Model = "local-model",
+            ApiKey = "test-key",
+        });
+        var handler = new RecordingHttpMessageHandler("{}");
+        var monitor = new LlmEndpointMonitor(store, new HttpClient(handler));
+
+        var available = await monitor.CheckAsync(force: true, CancellationToken.None);
+
+        Assert.True(available);
+        Assert.Equal(LlmEndpointStatus.Available, monitor.Status);
+        Assert.Equal("http://127.0.0.1:8080/v1/models", handler.RequestUri?.ToString());
+        Assert.Equal("Bearer", handler.AuthorizationScheme);
+        Assert.Equal("test-key", handler.AuthorizationParameter);
+    }
+
+    [Fact]
+    public void GlobalFallbackTracksEndpointAvailability()
+    {
+        var store = new UserCommandStore(filePath: null);
+        AddCommand(store, "Summarize", "Summarize: {}", "summarize", sendDelayMilliseconds: 0);
+        var client = new RecordingLlmClient("summary");
+        var monitor = new ControllableEndpointMonitor(LlmEndpointStatus.Unavailable);
+        var provider = new CommandPaletteLLMCommandsProvider(
+            store,
+            new LlmProviderSettingsStore(filePath: null),
+            client,
+            monitor);
+        var fallback = Assert.IsType<FormattedFallbackItem>(
+            Assert.Single(provider.FallbackCommands()));
+
+        fallback.FallbackHandler!.UpdateQuery("some long text");
+        Assert.Empty(fallback.Title);
+        Assert.Empty(client.Prompts);
+
+        monitor.SetStatus(LlmEndpointStatus.Available);
+        Assert.Equal("summary", fallback.Title);
+        Assert.Equal("Summarize: some long text", Assert.Single(client.Prompts));
+    }
+
     [Theory]
     [InlineData("{} + {}", "Maxim", "Maxim + Maxim")]
     [InlineData("{{{}}}", "Maxim", "{Maxim}")]
@@ -481,6 +527,32 @@ public sealed class UserCommandsTests
             var request = new PendingRequest(prompt, cancellationToken);
             Requests.Add(request);
             return request.Completion.Task;
+        }
+    }
+
+    private sealed class ControllableEndpointMonitor(LlmEndpointStatus initialStatus)
+        : ILlmEndpointMonitor
+    {
+        public LlmEndpointStatus Status { get; private set; } = initialStatus;
+
+        public event Action? StatusChanged;
+
+        public Task<bool> CheckAsync(bool force, CancellationToken cancellationToken) =>
+            Task.FromResult(Status == LlmEndpointStatus.Available);
+
+        public void Invalidate() => SetStatus(LlmEndpointStatus.Unknown);
+
+        public void ReportReachable() => SetStatus(LlmEndpointStatus.Available);
+
+        public void ReportUnreachable() => SetStatus(LlmEndpointStatus.Unavailable);
+
+        public void SetStatus(LlmEndpointStatus status)
+        {
+            if (Status != status)
+            {
+                Status = status;
+                StatusChanged?.Invoke();
+            }
         }
     }
 

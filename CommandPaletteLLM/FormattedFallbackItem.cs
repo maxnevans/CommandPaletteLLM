@@ -14,6 +14,8 @@ internal sealed partial class FormattedFallbackItem : FallbackCommandItem
     private readonly TimeSpan _debounce;
     private readonly Func<string, bool>? _isTopLevelCommandQuery;
     private readonly Action? _rootQueryObserved;
+    private readonly ILlmEndpointMonitor _endpointMonitor;
+    private string _lastQuery = string.Empty;
     private CancellationTokenSource? _requestCancellation;
     private int _requestVersion;
 
@@ -30,7 +32,8 @@ internal sealed partial class FormattedFallbackItem : FallbackCommandItem
         ILlmClient llmClient,
         TimeSpan? debounce = null,
         Func<string, bool>? isTopLevelCommandQuery = null,
-        Action? rootQueryObserved = null)
+        Action? rootQueryObserved = null,
+        ILlmEndpointMonitor? endpointMonitor = null)
         : base(
             new NoOpCommand(),
             definition.Name,
@@ -41,16 +44,24 @@ internal sealed partial class FormattedFallbackItem : FallbackCommandItem
         _debounce = debounce ?? TimeSpan.FromMilliseconds(definition.SendDelayMilliseconds);
         _isTopLevelCommandQuery = isTopLevelCommandQuery;
         _rootQueryObserved = rootQueryObserved;
+        _endpointMonitor = endpointMonitor ?? new AssumedAvailableEndpointMonitor();
         Title = string.Empty;
     }
 
     public override void UpdateQuery(string query)
     {
+        _lastQuery = query;
         _rootQueryObserved?.Invoke();
+        StartQuery(query);
+    }
+
+    private void StartQuery(string query)
+    {
         CancelRequest();
         var requestVersion = Interlocked.Increment(ref _requestVersion);
 
         if (string.IsNullOrWhiteSpace(query) ||
+            _endpointMonitor.Status != LlmEndpointStatus.Available ||
             _isTopLevelCommandQuery?.Invoke(query) == true ||
             !OutputFormatter.TryFormat(_promptFormat, query, out var prompt, out _))
         {
@@ -119,6 +130,17 @@ internal sealed partial class FormattedFallbackItem : FallbackCommandItem
         CancelRequest();
         Interlocked.Increment(ref _requestVersion);
         Title = string.Empty;
+    }
+
+    internal void EndpointStatusChanged(bool allowGlobalResults)
+    {
+        if (_endpointMonitor.Status != LlmEndpointStatus.Available || !allowGlobalResults)
+        {
+            CancelPendingRequest();
+            return;
+        }
+
+        StartQuery(_lastQuery);
     }
 
     private void CancelRequest()

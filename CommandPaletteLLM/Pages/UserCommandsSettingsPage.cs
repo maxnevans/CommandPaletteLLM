@@ -11,12 +11,17 @@ internal sealed partial class UserCommandsSettingsPage : ContentPage
     public UserCommandsSettingsPage(
         UserCommandStore store,
         LlmProviderSettingsStore providerSettingsStore,
-        Action commandsChanged)
+        Action commandsChanged,
+        Action providerSettingsChanged)
     {
         Title = "Command Palette LLM settings";
         Name = "Settings";
         Icon = new IconInfo("\uE713");
-        _form = new UserCommandsSettingsForm(store, providerSettingsStore, commandsChanged);
+        _form = new UserCommandsSettingsForm(
+            store,
+            providerSettingsStore,
+            commandsChanged,
+            providerSettingsChanged);
     }
 
     public override IContent[] GetContent() => [_form];
