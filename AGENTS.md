@@ -20,6 +20,10 @@ Use Visual Studio's Debug/x64 configuration to deploy and exercise the extension
 
 Follow the existing C# style: four-space indentation, file-scoped namespaces, nullable reference types, and one primary type per file. Use `PascalCase` for types, methods, and public members; use `_camelCase` for private fields and `camelCase` for parameters and locals. Prefer concise expression-bodied members where readability improves. Keep toolkit pages under `Pages/`, and run `dotnet format CommandPaletteLLM.sln` before submitting broad formatting changes.
 
+## Command Palette SDK Integration
+
+Before implementing extension-owned settings, routing, aliases, fallback controls, persistence, or other platform behavior, check whether Command Palette already provides a native mechanism. Use the native mechanism as the single source of truth and do not add a duplicate extension control. If a native mechanism cannot meet a requirement, document the gap and user-visible tradeoff before introducing custom behavior.
+
 ## Testing Guidelines
 
 Use a .NET test framework (xUnit is preferred) and name test classes after the subject, for example `CommandPaletteLLMPageTests`. Name tests by behavior, such as `GetItems_ReturnsPlaceholderCommand`. Cover new command routing and page-item behavior; manually verify registration, icons, and packaged launch behavior in Command Palette.
