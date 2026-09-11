@@ -6,6 +6,7 @@ namespace CommandPaletteLLM;
 public partial class CommandPaletteLLMCommandsProvider : CommandProvider
 {
     private readonly ICommandItem[] _commands;
+    private readonly IFallbackCommandItem[] _fallbackCommands;
 
     public CommandPaletteLLMCommandsProvider()
     {
@@ -15,7 +16,13 @@ public partial class CommandPaletteLLMCommandsProvider : CommandProvider
         [
             new CommandItem(new CommandPaletteLLMPage()) { Title = "Echo message" },
         ];
+        _fallbackCommands =
+        [
+            new GlobalEchoFallbackItem(),
+        ];
     }
 
     public override ICommandItem[] TopLevelCommands() => _commands;
+
+    public override IFallbackCommandItem[] FallbackCommands() => _fallbackCommands;
 }

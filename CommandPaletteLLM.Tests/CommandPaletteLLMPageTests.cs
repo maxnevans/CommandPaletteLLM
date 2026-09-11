@@ -65,6 +65,48 @@ public sealed class CommandPaletteLLMPageTests
         Assert.Equal(CommandResultKind.KeepOpen, result.Kind);
     }
 
+    [Fact]
+    public void FallbackCommands_ExposesGlobalEchoWithStableIdentity()
+    {
+        var provider = new CommandPaletteLLMCommandsProvider();
+
+        var fallback = Assert.IsType<GlobalEchoFallbackItem>(Assert.Single(provider.FallbackCommands()));
+        Assert.Equal("Echo message in global results", fallback.DisplayTitle);
+        Assert.Equal("CommandPaletteLLM.GlobalEcho", fallback.Id);
+    }
+
+    [Fact]
+    public void GlobalEcho_ReturnsTheCompleteQuery()
+    {
+        var fallback = new GlobalEchoFallbackItem();
+
+        fallback.FallbackHandler.UpdateQuery("Hello,  world! #42");
+
+        Assert.Equal("Hello,  world! #42", fallback.Title);
+    }
+
+    [Fact]
+    public void GlobalEcho_HidesWhitespaceOnlyQueries()
+    {
+        var fallback = new GlobalEchoFallbackItem();
+
+        fallback.FallbackHandler.UpdateQuery("  \t");
+
+        Assert.Empty(fallback.Title);
+    }
+
+    [Fact]
+    public void GlobalEchoResult_KeepsCommandPaletteOpenWhenInvoked()
+    {
+        var fallback = new GlobalEchoFallbackItem();
+        fallback.FallbackHandler.UpdateQuery("Hello world!");
+        var command = Assert.IsAssignableFrom<IInvokableCommand>(fallback.Command);
+
+        var result = command.Invoke(fallback);
+
+        Assert.Equal(CommandResultKind.KeepOpen, result.Kind);
+    }
+
     private static ICommandItem CreateCommand()
     {
         var provider = new CommandPaletteLLMCommandsProvider();
