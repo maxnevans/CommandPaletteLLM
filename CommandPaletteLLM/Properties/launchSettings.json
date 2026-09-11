@@ -1,0 +1,11 @@
+{
+  "profiles": {
+    "CommandPaletteLLM (Package)": {
+      "commandName": "MsixPackage",
+      "doNotLaunchApp": true
+    },
+    "CommandPaletteLLM (Unpackaged)": {
+      "commandName": "Project"
+    }
+  }
+}

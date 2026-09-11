@@ -1,0 +1,60 @@
+# Visual Studio user and workspace files
+.vs/
+*.suo
+*.user
+*.userosscache
+*.sln.docstates
+
+# .NET build output
+[Bb]in/
+[Oo]bj/
+[Aa]rtifacts/
+[Ll]og/
+[Ll]ogs/
+
+# Test and coverage output
+[Tt]est[Rr]esult*/
+coverage/
+*.coverage
+*.coveragexml
+
+# NuGet packages and generated files
+packages/
+*.nupkg
+*.snupkg
+project.lock.json
+project.fragment.lock.json
+artifacts.json
+
+# Publish and deployment output
+[Pp]ublish/
+AppPackages/
+BundleArtifacts/
+Package.StoreAssociation.xml
+*.appx
+*.appxbundle
+*.appxupload
+*.msix
+*.msixbundle
+*.msixupload
+
+# IDEs and operating systems
+.idea/
+.vscode/
+.DS_Store
+Thumbs.db
+
+# Local environment and secrets
+.env
+.env.*
+!.env.example
+secrets.json
+appsettings.*.local.json
+
+# Temporary files
+*.tmp
+*.temp
+*.log
+*.bak
+*.swp
+*~
