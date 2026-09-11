@@ -10,11 +10,14 @@ internal sealed class UserCommandDefinition
 
     public int SendDelayMilliseconds { get; set; } = 650;
 
+    public int ResponseVariations { get; set; } = 1;
+
     public UserCommandDefinition Clone() => new()
     {
         Id = Id,
         Name = Name,
         OutputFormat = OutputFormat,
         SendDelayMilliseconds = SendDelayMilliseconds,
+        ResponseVariations = ResponseVariations,
     };
 }

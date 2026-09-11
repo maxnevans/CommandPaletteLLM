@@ -92,6 +92,7 @@ internal sealed partial class UserCommandsSettingsForm : FormContent
             Name = ReadText(input, "newName"),
             OutputFormat = "{}",
             SendDelayMilliseconds = 650,
+            ResponseVariations = 1,
         });
 
         return ValidateAndSave(commands);
@@ -142,6 +143,17 @@ internal sealed partial class UserCommandsSettingsForm : FormContent
             }
 
             command.SendDelayMilliseconds = delay;
+        }
+
+        var variationsKey = $"variations_{command.Id}";
+        if (input[variationsKey] is not null)
+        {
+            if (!TryReadInteger(input, variationsKey, out var variations))
+            {
+                return ShowError($"Command '{command.Name}' must have a whole-number variation count.");
+            }
+
+            command.ResponseVariations = variations;
         }
 
         return ValidateAndSave(commands);
@@ -387,7 +399,7 @@ internal sealed partial class UserCommandsSettingsForm : FormContent
                                         new JsonObject
                                         {
                                             ["type"] = "TextBlock",
-                                            ["text"] = $"Send delay: {command.SendDelayMilliseconds} ms",
+                                            ["text"] = $"Send delay: {command.SendDelayMilliseconds} ms · Variations: {command.ResponseVariations}",
                                             ["isSubtle"] = true,
                                             ["spacing"] = "Small",
                                         },
@@ -448,6 +460,12 @@ internal sealed partial class UserCommandsSettingsForm : FormContent
                             command.SendDelayMilliseconds,
                             0,
                             10_000),
+                        BuildNumberInput(
+                            $"variations_{command.Id}",
+                            "Response variations",
+                            command.ResponseVariations,
+                            1,
+                            10),
                         new JsonObject
                         {
                             ["type"] = "ActionSet",
@@ -595,6 +613,11 @@ internal sealed partial class UserCommandsSettingsForm : FormContent
             if (command.SendDelayMilliseconds is < 0 or > 10_000)
             {
                 return $"Command '{command.Name}' must have a send delay between 0 and 10000 milliseconds.";
+            }
+
+            if (command.ResponseVariations is < 1 or > 10)
+            {
+                return $"Command '{command.Name}' must request between 1 and 10 response variations.";
             }
         }
 

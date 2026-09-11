@@ -44,6 +44,7 @@ public sealed class UserCommandsTests
         Assert.Equal("Greeting", definition.Name);
         Assert.Equal("{}", definition.OutputFormat);
         Assert.Equal(650, definition.SendDelayMilliseconds);
+        Assert.Equal(1, definition.ResponseVariations);
         Assert.Equal(1, itemsChanged);
         var command = Assert.Single(provider.TopLevelCommands());
         Assert.Equal("Greeting", command.Title);
@@ -65,7 +66,7 @@ public sealed class UserCommandsTests
         var form = GetSettingsForm(provider);
 
         form.SubmitForm(
-            """{"name_stable-id":"Welcome","format_stable-id":"Welcome, {}.","delay_stable-id":125}""",
+            """{"name_stable-id":"Welcome","format_stable-id":"Welcome, {}.","delay_stable-id":125,"variations_stable-id":3}""",
             """{"actionId":"save:stable-id"}""");
 
         Assert.Equal(originalCommandId, Assert.Single(provider.TopLevelCommands()).Command.Id);
@@ -74,6 +75,7 @@ public sealed class UserCommandsTests
             Assert.IsType<FormattedFallbackItem>(Assert.Single(provider.FallbackCommands())).Id);
         Assert.Equal("Welcome", Assert.Single(provider.TopLevelCommands()).Title);
         Assert.Equal(125, Assert.Single(store.GetCommands()).SendDelayMilliseconds);
+        Assert.Equal(3, Assert.Single(store.GetCommands()).ResponseVariations);
     }
 
     [Fact]
@@ -136,6 +138,7 @@ public sealed class UserCommandsTests
         Assert.Contains("Delete command", form.TemplateJson, StringComparison.Ordinal);
         Assert.Contains("Cancel editing", form.TemplateJson, StringComparison.Ordinal);
         Assert.Contains("Send delay (milliseconds)", form.TemplateJson, StringComparison.Ordinal);
+        Assert.Contains("Response variations", form.TemplateJson, StringComparison.Ordinal);
         Assert.Contains("\"type\":\"Input.Number\"", form.TemplateJson, StringComparison.Ordinal);
         Assert.Contains("\"id\":\"add\"", form.TemplateJson, StringComparison.Ordinal);
     }
@@ -228,12 +231,69 @@ public sealed class UserCommandsTests
 
         Assert.Equal(2, client.Requests.Count);
         client.Requests[1].Completion.SetResult("new response");
-        await WaitUntilAsync(() => page.GetItems().Length == 1);
+        await WaitUntilAsync(() =>
+            page.GetItems() is [{ Title: "new response" }]);
         Assert.Equal("new response", Assert.Single(page.GetItems()).Title);
 
         client.Requests[0].Completion.SetResult("stale response");
         await Task.Yield();
         Assert.Equal("new response", Assert.Single(page.GetItems()).Title);
+    }
+
+    [Fact]
+    public async Task FormattedPage_ShowsConnectionAndRequestProgressThenRecovers()
+    {
+        var client = new ControlledLlmClient();
+        var monitor = new ControllableEndpointMonitor(LlmEndpointStatus.Unavailable);
+        var page = new FormattedCommandPage(
+            new UserCommandDefinition
+            {
+                Id = "translate",
+                Name = "Translate",
+                OutputFormat = "Translate: {}",
+                SendDelayMilliseconds = 100,
+            },
+            client,
+            endpointMonitor: monitor,
+            retryDelay: TimeSpan.FromMilliseconds(500),
+            statusUpdateInterval: TimeSpan.FromMilliseconds(10));
+
+        Assert.Contains("LLM connection unavailable", Assert.Single(page.GetItems()).Title);
+        monitor.SetStatus(LlmEndpointStatus.Available);
+        Assert.Empty(page.GetItems());
+        monitor.SetStatus(LlmEndpointStatus.Unavailable);
+        Assert.Contains("LLM connection unavailable", Assert.Single(page.GetItems()).Title);
+
+        page.SearchText = "hello";
+        Assert.Empty(client.Requests);
+
+        monitor.SetStatus(LlmEndpointStatus.Available);
+        Assert.Contains("Sending to LLM in", Assert.Single(page.GetItems()).Title);
+        await WaitUntilAsync(() => client.Requests.Count == 1);
+        Assert.Equal("Waiting for LLM response…", Assert.Single(page.GetItems()).Title);
+
+        client.Requests[0].Completion.SetResult("hola");
+        await WaitUntilAsync(() => Assert.Single(page.GetItems()).Title == "hola");
+        Assert.Equal("hola", Assert.Single(page.GetItems()).Title);
+    }
+
+    [Fact]
+    public void FormattedPage_ReturnsConfiguredNumberOfVariations()
+    {
+        var client = new RecordingLlmClient("translation");
+        var page = new FormattedCommandPage(new UserCommandDefinition
+        {
+            Id = "translate",
+            Name = "Translate",
+            OutputFormat = "Translate: {}",
+            SendDelayMilliseconds = 0,
+            ResponseVariations = 3,
+        }, client, TimeSpan.Zero);
+
+        page.SearchText = "hello";
+
+        Assert.Equal(3, page.GetItems().Length);
+        Assert.Equal(3, Assert.Single(client.VariationCounts));
     }
 
     [Fact]
@@ -320,17 +380,18 @@ public sealed class UserCommandsTests
             ApiKey = "test-key",
         });
         var handler = new RecordingHttpMessageHandler(
-            """{"choices":[{"message":{"role":"assistant","content":"  The answer.  "}}]}""");
+            """{"choices":[{"message":{"role":"assistant","content":"  First answer.  "}},{"message":{"role":"assistant","content":"Second answer."}}]}""");
         var client = new OpenAiCompatibleLlmClient(store, new HttpClient(handler));
 
-        var response = await client.CompleteAsync("Explain this", CancellationToken.None);
+        var responses = await client.CompleteAsync("Explain this", 2, CancellationToken.None);
 
-        Assert.Equal("The answer.", response);
+        Assert.Equal(["First answer.", "Second answer."], responses);
         Assert.Equal("http://127.0.0.1:8080/v1/chat/completions", handler.RequestUri?.ToString());
         Assert.Equal("Bearer", handler.AuthorizationScheme);
         Assert.Equal("test-key", handler.AuthorizationParameter);
         using var requestJson = JsonDocument.Parse(Assert.IsType<string>(handler.RequestBody));
         Assert.Equal("local-model", requestJson.RootElement.GetProperty("model").GetString());
+        Assert.Equal(2, requestJson.RootElement.GetProperty("n").GetInt32());
         Assert.Equal(
             "Explain this",
             requestJson.RootElement.GetProperty("messages")[0].GetProperty("content").GetString());
@@ -424,6 +485,7 @@ public sealed class UserCommandsTests
             Assert.Equal("Greeting", command.Name);
             Assert.Equal("Hello {}!", command.OutputFormat);
             Assert.Equal(650, command.SendDelayMilliseconds);
+            Assert.Equal(1, command.ResponseVariations);
         }
         finally
         {
@@ -493,6 +555,7 @@ public sealed class UserCommandsTests
             Name = name,
             OutputFormat = outputFormat,
             SendDelayMilliseconds = sendDelayMilliseconds,
+            ResponseVariations = 1,
         });
         store.ReplaceAll(commands);
     }
@@ -511,10 +574,19 @@ public sealed class UserCommandsTests
     {
         public List<string> Prompts { get; } = [];
 
-        public Task<string> CompleteAsync(string prompt, CancellationToken cancellationToken)
+        public List<int> VariationCounts { get; } = [];
+
+        public Task<IReadOnlyList<string>> CompleteAsync(
+            string prompt,
+            int variations,
+            CancellationToken cancellationToken)
         {
             Prompts.Add(prompt);
-            return Task.FromResult(response);
+            VariationCounts.Add(variations);
+            return Task.FromResult<IReadOnlyList<string>>(
+                Enumerable.Range(1, variations)
+                    .Select(index => index == 1 ? response : $"{response} {index}")
+                    .ToArray());
         }
     }
 
@@ -522,11 +594,14 @@ public sealed class UserCommandsTests
     {
         public List<PendingRequest> Requests { get; } = [];
 
-        public Task<string> CompleteAsync(string prompt, CancellationToken cancellationToken)
+        public async Task<IReadOnlyList<string>> CompleteAsync(
+            string prompt,
+            int variations,
+            CancellationToken cancellationToken)
         {
             var request = new PendingRequest(prompt, cancellationToken);
             Requests.Add(request);
-            return request.Completion.Task;
+            return [await request.Completion.Task];
         }
     }
 

@@ -67,7 +67,11 @@ public partial class CommandPaletteLLMCommandsProvider : CommandProvider
     private void ReloadCommands(bool raiseItemsChanged)
     {
         CancelFallbackRequests();
-        CancelCommandPageRequests();
+        foreach (var page in _commandPages)
+        {
+            page.Dispose();
+        }
+
         _commandPageActive = false;
         var definitions = _store.GetCommands();
         var commandNames = definitions

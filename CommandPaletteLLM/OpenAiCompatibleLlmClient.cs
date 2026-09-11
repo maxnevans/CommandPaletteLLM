@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using System.Linq;
 using System.Net.Http;
 using System.Net.Http.Headers;
 using System.Net.Http.Json;
@@ -43,8 +44,9 @@ internal sealed class OpenAiCompatibleLlmClient : ILlmClient
         _endpointMonitor = endpointMonitor ?? new AssumedAvailableEndpointMonitor();
     }
 
-    public async Task<string> CompleteAsync(
+    public async Task<IReadOnlyList<string>> CompleteAsync(
         string prompt,
+        int variations,
         CancellationToken cancellationToken)
     {
         var settings = _settingsStore.Get();
@@ -60,6 +62,7 @@ internal sealed class OpenAiCompatibleLlmClient : ILlmClient
             new ChatCompletionRequest
             {
                 Model = settings.Model,
+                Variations = variations,
                 Messages =
                 [
                     new ChatMessage { Role = "user", Content = prompt },
@@ -119,15 +122,18 @@ internal sealed class OpenAiCompatibleLlmClient : ILlmClient
                     : $"The provider returned HTTP {(int)response.StatusCode}: {detail}");
             }
 
-            var content = completion?.Choices is { Count: > 0 }
-                ? completion.Choices[0].Message?.Content
-                : null;
-            if (string.IsNullOrWhiteSpace(content))
+            var contents = completion?.Choices
+                .Select(choice => choice.Message?.Content?.Trim())
+                .Where(content => !string.IsNullOrWhiteSpace(content))
+                .Distinct(StringComparer.Ordinal)
+                .Cast<string>()
+                .ToArray() ?? [];
+            if (contents.Length == 0)
             {
                 throw new LlmRequestException("The provider returned an empty response.");
             }
 
-            return content.Trim();
+            return contents;
         }
     }
 
@@ -155,6 +161,9 @@ internal sealed class ChatCompletionRequest
 {
     [JsonPropertyName("model")]
     public string Model { get; set; } = string.Empty;
+
+    [JsonPropertyName("n")]
+    public int Variations { get; set; } = 1;
 
     [JsonPropertyName("messages")]
     public List<ChatMessage> Messages { get; set; } = [];

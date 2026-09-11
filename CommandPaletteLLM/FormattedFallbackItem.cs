@@ -83,9 +83,12 @@ internal sealed partial class FormattedFallbackItem : FallbackCommandItem
         try
         {
             await Task.Delay(_debounce, cancellationToken).ConfigureAwait(false);
-            var response = await _llmClient.CompleteAsync(prompt, cancellationToken)
+            var responses = await _llmClient.CompleteAsync(
+                prompt,
+                variations: 1,
+                cancellationToken: cancellationToken)
                 .ConfigureAwait(false);
-            Publish(requestVersion, response, cancellationToken);
+            Publish(requestVersion, responses[0], cancellationToken);
         }
         catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
         {
