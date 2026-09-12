@@ -12,6 +12,8 @@ internal sealed class LlmProviderSettings
 
     public string ApiKey { get; set; } = string.Empty;
 
+    public string ConsentedRemoteOrigin { get; set; } = string.Empty;
+
     public LlmProviderSettings Clone() => new()
     {
         Id = Id,
@@ -19,5 +21,6 @@ internal sealed class LlmProviderSettings
         BaseUrl = BaseUrl,
         Model = Model,
         ApiKey = ApiKey,
+        ConsentedRemoteOrigin = ConsentedRemoteOrigin,
     };
 }

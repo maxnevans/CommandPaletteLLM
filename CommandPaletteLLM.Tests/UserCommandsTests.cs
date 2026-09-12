@@ -371,6 +371,28 @@ public sealed class UserCommandsTests
     }
 
     [Fact]
+    public void Settings_RequiresExplicitConsentForRemoteProvider()
+    {
+        var commandStore = new UserCommandStore(filePath: null);
+        var providerStore = new LlmProviderSettingsStore(filePath: null);
+        var provider = new CommandPaletteLLMCommandsProvider(commandStore, providerStore);
+        var form = GetSettingsForm(provider);
+
+        form.SubmitForm(
+            """{"providerBaseUrl":"https://example.test/v1","providerModel":"test-model","providerRemoteConsent":"false"}""",
+            """{"actionId":"save-provider"}""");
+
+        Assert.False(ProviderDataConsent.HasConsent(providerStore.Get()));
+
+        form.SubmitForm(
+            """{"providerBaseUrl":"https://example.test/v1","providerModel":"test-model","providerRemoteConsent":"true"}""",
+            """{"actionId":"save-provider"}""");
+
+        Assert.Equal("https://example.test", providerStore.Get().ConsentedRemoteOrigin);
+        Assert.True(ProviderDataConsent.HasConsent(providerStore.Get()));
+    }
+
+    [Fact]
     public void FormattedPage_ReturnsOneFormattedResult()
     {
         var client = new RecordingLlmClient("This is the answer.");
@@ -869,6 +891,7 @@ public sealed class UserCommandsTests
                 Name = "Second",
                 BaseUrl = "https://second.example/v1",
                 Model = "second-model",
+                ConsentedRemoteOrigin = "https://second.example",
             },
         ]);
         var handler = new RecordingHttpMessageHandler(
@@ -1067,6 +1090,10 @@ public sealed class UserCommandsTests
             Assert.Equal("https://example.test/v1", settings.BaseUrl);
             Assert.Equal("test-model", settings.Model);
             Assert.Equal("key", settings.ApiKey);
+            var persistedJson = File.ReadAllText(filePath);
+            Assert.Contains("ProtectedApiKey", persistedJson, StringComparison.Ordinal);
+            Assert.DoesNotContain("\"ApiKey\":\"key\"", persistedJson, StringComparison.Ordinal);
+            Assert.DoesNotContain("\"key\"", persistedJson, StringComparison.Ordinal);
         }
         finally
         {
@@ -1098,6 +1125,10 @@ public sealed class UserCommandsTests
             Assert.Equal("Local LLM", provider.Name);
             Assert.Equal("https://legacy.example/v1", provider.BaseUrl);
             Assert.Equal("legacy-model", provider.Model);
+            Assert.Equal("key", provider.ApiKey);
+            var migratedJson = File.ReadAllText(providersPath);
+            Assert.Contains("ProtectedApiKey", migratedJson, StringComparison.Ordinal);
+            Assert.DoesNotContain("\"ApiKey\":\"key\"", migratedJson, StringComparison.Ordinal);
         }
         finally
         {
@@ -1106,6 +1137,56 @@ public sealed class UserCommandsTests
                 Directory.Delete(directory, recursive: true);
             }
         }
+    }
+
+    [Theory]
+    [InlineData("http://localhost:8080/v1")]
+    [InlineData("http://127.0.0.1:8080/v1")]
+    [InlineData("http://[::1]:8080/v1")]
+    public void ProviderConsent_IsNotRequiredForLoopbackEndpoints(string baseUrl)
+    {
+        var provider = new LlmProviderSettings { BaseUrl = baseUrl };
+
+        Assert.False(ProviderDataConsent.RequiresConsent(baseUrl));
+        Assert.True(ProviderDataConsent.HasConsent(provider));
+    }
+
+    [Fact]
+    public async Task OpenAiClient_BlocksRemoteProviderWithoutConsent()
+    {
+        var store = new LlmProviderSettingsStore(filePath: null);
+        store.Replace(new LlmProviderSettings
+        {
+            BaseUrl = "https://example.test/v1",
+            Model = "test-model",
+        });
+        var handler = new RecordingHttpMessageHandler(
+            """{"choices":[{"message":{"role":"assistant","content":"answer"}}]}""");
+        var client = new OpenAiCompatibleLlmClient(store, new HttpClient(handler));
+
+        var exception = await Assert.ThrowsAsync<LlmRequestException>(() =>
+            client.CompleteAsync("Prompt", 1, CancellationToken.None));
+
+        Assert.Contains("Allow prompt transmission", exception.Message, StringComparison.Ordinal);
+        Assert.Null(handler.RequestUri);
+    }
+
+    [Fact]
+    public void ProviderStore_ResetsConsentWhenRemoteOriginChanges()
+    {
+        var store = new LlmProviderSettingsStore(filePath: null);
+        store.Replace(new LlmProviderSettings
+        {
+            BaseUrl = "https://first.example/v1",
+            Model = "test-model",
+            ConsentedRemoteOrigin = "https://first.example",
+        });
+        var provider = store.Get();
+        provider.BaseUrl = "https://second.example/v1";
+
+        store.Replace(provider);
+
+        Assert.Empty(store.Get().ConsentedRemoteOrigin);
     }
 
     private static CommandPaletteLLMCommandsProvider CreateProvider(out UserCommandStore store)

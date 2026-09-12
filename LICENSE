@@ -1,6 +1,6 @@
 PROPRIETARY SOFTWARE — ALL RIGHTS RESERVED
 
-Copyright (c) 2026 the CommandPaletteLLM copyright holder.
+Copyright (c) 2026 maxnevans.
 All rights reserved.
 
 This source code and all associated documentation, assets, and other materials
@@ -14,6 +14,10 @@ adapt, translate, create derivative works from, compile, execute, publish,
 display, disclose, distribute, transmit, sublicense, sell, rent, lease,
 commercialize, reverse engineer, decompile, disassemble, or otherwise exploit
 the Software for any purpose.
+
+This source-code license does not govern compiled release binaries that the
+copyright holder distributes through an authorized channel. Those binaries are
+licensed separately under BINARY-LICENSE.txt.
 
 Access to or inspection of the Software does not itself grant any right or
 license. If a separate binding agreement, including the terms of an authorized
@@ -34,4 +38,4 @@ PERMITTED BY LAW, THE COPYRIGHT HOLDER SHALL NOT BE LIABLE FOR ANY CLAIM,
 DAMAGES, OR OTHER LIABILITY ARISING FROM, OUT OF, OR IN CONNECTION WITH THE
 SOFTWARE OR ITS USE.
 
-For licensing inquiries, contact the copyright holder.
+For licensing inquiries, contact maxnevans through the project's support page.

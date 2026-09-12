@@ -8,12 +8,12 @@
   IgnorableNamespaces="uap uap3 com rescap">
 
   <Identity
-    Name="maxnevans.CommandPaletteLLM"
-    Publisher="CN=D8B7BDC7-1445-4AE6-BEEC-E9C2D0FD7ACD"
+    Name="maxnevans.CommandPaletteLLM.Development"
+    Publisher="CN=maxnevans"
     Version="1.0.0.0" />
 
   <Properties>
-    <DisplayName>Command Palette LLM</DisplayName>
+    <DisplayName>Command Palette LLM (Development)</DisplayName>
     <PublisherDisplayName>maxnevans</PublisherDisplayName>
     <Logo>Assets\StoreLogo.png</Logo>
   </Properties>
@@ -29,8 +29,8 @@
   <Applications>
     <Application Id="App" Executable="$targetnametoken$.exe" EntryPoint="$targetentrypoint$">
       <uap:VisualElements
-        DisplayName="Command Palette LLM"
-        Description="Command Palette LLM"
+        DisplayName="Command Palette LLM (Development)"
+        Description="Development build of Command Palette LLM"
         BackgroundColor="transparent"
         Square150x150Logo="Assets\Square150x150Logo.png"
         Square44x44Logo="Assets\Square44x44Logo.png">
@@ -40,22 +40,22 @@
       <Extensions>
         <com:Extension Category="windows.comServer">
           <com:ComServer>
-            <com:ExeServer Executable="CommandPaletteLLM.exe" Arguments="-RegisterProcessAsComServer" DisplayName="Command Palette LLM">
-              <com:Class Id="B22C475A-BDEE-4FFA-AF3D-915D4E86C56A" DisplayName="Command Palette LLM" />
+            <com:ExeServer Executable="CommandPaletteLLM.exe" Arguments="-RegisterProcessAsComServer" DisplayName="Command Palette LLM (Development)">
+              <com:Class Id="78C00F8F-3B66-47CE-B809-35BC6912AD98" DisplayName="Command Palette LLM (Development)" />
             </com:ExeServer>
           </com:ComServer>
         </com:Extension>
         <uap3:Extension Category="windows.appExtension">
           <uap3:AppExtension
             Name="com.microsoft.commandpalette"
-            Id="CommandPaletteLLM"
+            Id="CommandPaletteLLM.Development"
             PublicFolder="Public"
-            DisplayName="Command Palette LLM"
-            Description="Command Palette LLM">
+            DisplayName="Command Palette LLM (Development)"
+            Description="Development build of Command Palette LLM">
             <uap3:Properties>
               <CmdPalProvider>
                 <Activation>
-                  <CreateInstance ClassId="B22C475A-BDEE-4FFA-AF3D-915D4E86C56A" />
+                  <CreateInstance ClassId="78C00F8F-3B66-47CE-B809-35BC6912AD98" />
                 </Activation>
                 <SupportedInterfaces>
                   <Commands />

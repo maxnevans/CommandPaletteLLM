@@ -54,7 +54,9 @@ dotnet test CommandPaletteLLM.sln -c Debug -p:Platform=x64
 
 Open `CommandPaletteLLM.sln` in Visual Studio, select **Debug** and **x64**, then choose **Build → Deploy CommandPaletteLLM**. A normal build produces the binaries but does not register the extension with Windows.
 
-After the first deployment—or after redeploying a changed build—open Command Palette, run **Reload Command Palette Extension**, and select **Command Palette LLM**. Microsoft documents this development loop in [How to create Command Palette extensions](https://learn.microsoft.com/windows/powertoys/command-palette/creating-an-extension#understanding-the-extension-project-structure).
+After the first deployment—or after redeploying a changed build—open Command Palette, run **Reload Command Palette Extension**, and select **Command Palette LLM (Development)**. Visual Studio uses the isolated `maxnevans.CommandPaletteLLM.Development` package identity, so this development deployment does not replace the Store package or share its settings. Microsoft documents this development loop in [How to create Command Palette extensions](https://learn.microsoft.com/windows/powertoys/command-palette/creating-an-extension#understanding-the-extension-project-structure).
+
+If you previously deployed **Command Palette LLM (Visual Studio)**, uninstall it once from **Windows Settings → Apps → Installed apps** before deploying the renamed development package. Windows treats the new package identity as a separate installation.
 
 For ARM64, replace `x64` with `ARM64` in the commands and Visual Studio configuration.
 
@@ -133,7 +135,15 @@ If parsing fails, the response is still shown using the normal text-result layou
 
 ## Local data and privacy
 
-Configuration is stored under `%LOCALAPPDATA%\CommandPaletteLLM`:
+Configuration files are created only after settings are saved. An unpackaged
+development or EXE build stores them under `%LOCALAPPDATA%\CommandPaletteLLM`.
+Windows redirects the same path for the MSIX build to:
+
+```text
+%LOCALAPPDATA%\Packages\maxnevans.CommandPaletteLLM_9aav5gzbpx8nj\LocalCache\Local\CommandPaletteLLM
+```
+
+The effective directory contains:
 
 ```text
 CommandPaletteLLM/
@@ -142,17 +152,38 @@ CommandPaletteLLM/
 └── Icons/
 ```
 
-API keys are stored in `providers.json` as local plain text. Treat that file as sensitive and do not commit or share it. Prompts are sent only to the provider assigned to the command; the extension has no separate telemetry or cloud backend.
+API keys are encrypted for the current Windows user with Windows DPAPI before
+they are stored in `providers.json`. Prompts are sent only to the provider
+assigned to the command, and a non-local provider must be explicitly authorized
+in settings before the extension contacts it. The extension has no separate
+telemetry or cloud backend. See [PRIVACY.md](PRIVACY.md) for the full data flow.
 
-## Publish
+## Build a Microsoft Store submission
 
-Create a trimmed x64 publish output with:
+The package uses the Partner Center identity reserved for this product:
 
-```powershell
-dotnet publish CommandPaletteLLM/CommandPaletteLLM.csproj -c Release -p:Platform=x64 -r win-x64
+```text
+Name:                 maxnevans.CommandPaletteLLM
+Publisher:            CN=D8B7BDC7-1445-4AE6-BEEC-E9C2D0FD7ACD
+PublisherDisplayName: maxnevans
 ```
 
-Use `ARM64` and `win-arm64` for an ARM64 package. Release publishing and signing still require the appropriate publisher identity and certificate; the development manifest values are not production publishing credentials.
+Create the Store submission with Visual Studio's standard single-project MSIX workflow:
+
+1. Set the package version in `CommandPaletteLLM\Package.appxmanifest`. Use four numeric components, keep the final component `0`, and choose a version higher than the previous Store submission.
+2. Right-click the `CommandPaletteLLM` project and select **Package and Publish → Create App Packages**.
+3. Select **Microsoft Store**, associate the project with the existing Partner Center product if prompted, and continue.
+4. Select **Release**, include **x64** and **ARM64**, create a bundle, and disable automatic version increments so the manifest remains the version source.
+5. Create the packages and upload the generated `.msixupload` from the ignored `AppPackages` directory under **Partner Center → Command Palette LLM → Product release → Start submission → Packages**.
+
+Microsoft signs the package after certification. Complete Pricing and availability, Properties, Age ratings, Store listings, and Submission options before selecting **Submit for certification**.
+
+The Store listing and certification notes must explain that this is an extension requiring Microsoft PowerToys with Command Palette enabled. Include instructions for opening Command Palette and exercising at least one configured LLM command so certification can test the extension.
+
+The public preview version is `0.1.0`; its first Store package version is
+`1.0.0.0` because Microsoft Store package versions cannot begin with zero.
+
+Store distribution is the only maintained end-user installation path. The repository does not produce or support a private, self-signed, or unsigned installer.
 
 ## Troubleshooting
 
@@ -174,7 +205,7 @@ Increase the command's send delay. Lower values feel faster but can submit more 
 
 ### Remove the development deployment
 
-Uninstall **Command Palette LLM** from **Windows Settings → Apps → Installed apps**, then reload Command Palette. This removes the registered package; repository files and the local configuration directory remain separate.
+Uninstall **Command Palette LLM (Development)** from **Windows Settings → Apps → Installed apps**, then reload Command Palette. This removes the registered package and may remove its isolated virtualized package data; back up its configuration first if needed.
 
 ## Project structure
 
@@ -188,4 +219,8 @@ CommandPaletteLLM.sln
 
 ## License
 
-Copyright © 2026. All rights reserved. This repository is proprietary software; viewing the source does not grant permission to use, copy, modify, compile, or distribute it. See [LICENSE](LICENSE) for the complete terms and licensing contact guidance.
+Copyright © 2026 maxnevans. The source code is proprietary; viewing it does not
+grant permission to use, copy, modify, compile, or distribute it. Official
+compiled binaries may be used for personal, educational, charitable, and
+nonprofit purposes under [BINARY-LICENSE.txt](BINARY-LICENSE.txt). Commercial
+and for-profit use is not permitted without separate authorization.

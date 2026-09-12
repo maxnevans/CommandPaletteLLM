@@ -5,7 +5,11 @@ using System.Threading;
 
 namespace CommandPaletteLLM;
 
+#if DEVELOPMENT_PACKAGE
+[Guid("78C00F8F-3B66-47CE-B809-35BC6912AD98")]
+#else
 [Guid("B22C475A-BDEE-4FFA-AF3D-915D4E86C56A")]
+#endif
 public sealed partial class CommandPaletteLLM : IExtension, IDisposable
 {
     private readonly ManualResetEvent _extensionDisposedEvent;

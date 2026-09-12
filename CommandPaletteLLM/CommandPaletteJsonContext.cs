@@ -3,9 +3,12 @@ using System.Text.Json.Serialization;
 
 namespace CommandPaletteLLM;
 
+[JsonSourceGenerationOptions(DefaultIgnoreCondition = JsonIgnoreCondition.WhenWritingNull)]
 [JsonSerializable(typeof(List<UserCommandDefinition>))]
 [JsonSerializable(typeof(LlmProviderSettings))]
 [JsonSerializable(typeof(List<LlmProviderSettings>))]
+[JsonSerializable(typeof(StoredLlmProviderSettings))]
+[JsonSerializable(typeof(List<StoredLlmProviderSettings>))]
 [JsonSerializable(typeof(ChatCompletionRequest))]
 [JsonSerializable(typeof(ChatCompletionResponse))]
 internal sealed partial class CommandPaletteJsonContext : JsonSerializerContext

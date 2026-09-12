@@ -6,5 +6,15 @@
     <_SkipUpgradeNetAnalyzersNuGetWarning>true</_SkipUpgradeNetAnalyzersNuGetWarning>
     <NuGetAuditMode>direct</NuGetAuditMode>
     <PlatformTarget>$(Platform)</PlatformTarget>
+    <Version>0.1.0</Version>
+    <AssemblyVersion>0.1.0.0</AssemblyVersion>
+    <FileVersion>0.1.0.0</FileVersion>
+    <Authors>maxnevans</Authors>
+    <Company>maxnevans</Company>
+    <Product>Command Palette LLM</Product>
+    <Description>Build reusable, local-first LLM commands for PowerToys Command Palette.</Description>
+    <Copyright>Copyright © 2026 maxnevans. All rights reserved.</Copyright>
+    <RepositoryUrl>https://github.com/maxnevans/CommandPaletteLLM</RepositoryUrl>
+    <RepositoryType>git</RepositoryType>
   </PropertyGroup>
 </Project>
