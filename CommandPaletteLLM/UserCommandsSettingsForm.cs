@@ -147,6 +147,7 @@ internal sealed partial class UserCommandsSettingsForm : FormContent
             OutputFormat = "{}",
             SendDelayMilliseconds = 650,
             ResponseVariations = 1,
+            EnableAdvancedOutput = false,
             ProviderId = _providerSettingsStore.Get().Id,
             Exposure = CommandExposure.FallbackCommand,
             EnableGlobalFallback = true,
@@ -305,6 +306,12 @@ internal sealed partial class UserCommandsSettingsForm : FormContent
 
         command.Name = ReadText(input, $"name_{command.Id}", command.Name);
         command.OutputFormat = ReadText(input, $"format_{command.Id}", command.OutputFormat);
+        var advancedOutputKey = $"advancedOutput_{command.Id}";
+        if (input[advancedOutputKey] is not null)
+        {
+            command.EnableAdvancedOutput = ReadBoolean(input, advancedOutputKey);
+        }
+
         var delayKey = $"delay_{command.Id}";
         if (input[delayKey] is not null)
         {
@@ -763,7 +770,7 @@ internal sealed partial class UserCommandsSettingsForm : FormContent
                                         new JsonObject
                                         {
                                             ["type"] = "TextBlock",
-                                            ["text"] = $"{GetExposureTitle(command.EffectiveExposure)} · {GetProviderName(command.ProviderId, providers)} · {command.SendDelayMilliseconds} ms · {command.ResponseVariations} variation(s)",
+                                            ["text"] = $"{GetExposureTitle(command.EffectiveExposure)} · {GetProviderName(command.ProviderId, providers)} · {command.SendDelayMilliseconds} ms · {command.ResponseVariations} variation(s){(command.EnableAdvancedOutput ? " · Advanced output" : string.Empty)}",
                                             ["isSubtle"] = true,
                                             ["spacing"] = "Small",
                                         },
@@ -816,7 +823,14 @@ internal sealed partial class UserCommandsSettingsForm : FormContent
                             $"format_{command.Id}",
                             "Prompt format",
                             ReadText(draftInputs, $"format_{command.Id}", command.OutputFormat),
-                            "Use {} for the search term, {{ for {, and }} for }."),
+                            "Use {} for the search term, {{ for {, and }} for }.",
+                            isMultiline: true),
+                        BuildAdvancedOutputInput(
+                            $"advancedOutput_{command.Id}",
+                            ReadBoolean(
+                                draftInputs,
+                                $"advancedOutput_{command.Id}",
+                                command.EnableAdvancedOutput)),
                         BuildNumberInput(
                             $"delay_{command.Id}",
                             "Send delay (milliseconds)",
@@ -874,7 +888,8 @@ internal sealed partial class UserCommandsSettingsForm : FormContent
         string label,
         string value,
         string placeholder,
-        bool isRequired = true) =>
+        bool isRequired = true,
+        bool isMultiline = false) =>
         new()
         {
             ["type"] = "Input.Text",
@@ -883,6 +898,7 @@ internal sealed partial class UserCommandsSettingsForm : FormContent
             ["value"] = value,
             ["placeholder"] = placeholder,
             ["isRequired"] = isRequired,
+            ["isMultiline"] = isMultiline,
             ["errorMessage"] = $"{label} is required.",
         };
 
@@ -949,6 +965,122 @@ internal sealed partial class UserCommandsSettingsForm : FormContent
             ["value"] = value ? "true" : "false",
             ["valueOn"] = "true",
             ["valueOff"] = "false",
+        };
+
+    [UnconditionalSuppressMessage(
+        "AOT",
+        "IL3050",
+        Justification = "The help card adds only primitive values and explicit JsonNode instances.")]
+    [UnconditionalSuppressMessage(
+        "Trimming",
+        "IL2026",
+        Justification = "The help card adds only primitive values and explicit JsonNode instances.")]
+    private static JsonObject BuildAdvancedOutputInput(string id, bool value)
+    {
+        var helpId = $"{id}_help";
+        return new JsonObject
+        {
+            ["type"] = "Container",
+            ["items"] = new JsonArray
+            {
+                new JsonObject
+                {
+                    ["type"] = "ColumnSet",
+                    ["spacing"] = "None",
+                    ["columns"] = new JsonArray
+                    {
+                        new JsonObject
+                        {
+                            ["type"] = "Column",
+                            ["width"] = "auto",
+                            ["verticalContentAlignment"] = "Center",
+                            ["items"] = new JsonArray
+                            {
+                                BuildToggleInput(id, "Enable advanced output format", value),
+                            },
+                        },
+                        new JsonObject
+                        {
+                            ["type"] = "Column",
+                            ["width"] = "auto",
+                            ["spacing"] = "Small",
+                            ["verticalContentAlignment"] = "Center",
+                            ["items"] = new JsonArray
+                            {
+                                new JsonObject
+                                {
+                                    ["type"] = "RichTextBlock",
+                                    ["inlines"] = new JsonArray
+                                    {
+                                        new JsonObject
+                                        {
+                                            ["type"] = "TextRun",
+                                            ["text"] = "ⓘ",
+                                            ["isSubtle"] = true,
+                                            ["selectAction"] = new JsonObject
+                                            {
+                                                ["type"] = "Action.ToggleVisibility",
+                                                ["tooltip"] = "JSON object with optional title, subtitle, details, section, and tags fields. Click for details.",
+                                                ["targetElements"] = new JsonArray(helpId),
+                                            },
+                                        },
+                                    },
+                                },
+                            },
+                        },
+                    },
+                },
+                BuildAdvancedOutputHelp(helpId),
+            },
+        };
+    }
+
+    [UnconditionalSuppressMessage(
+        "AOT",
+        "IL3050",
+        Justification = "The help content adds only primitive values and explicit JsonNode instances.")]
+    [UnconditionalSuppressMessage(
+        "Trimming",
+        "IL2026",
+        Justification = "The help content adds only primitive values and explicit JsonNode instances.")]
+    private static JsonObject BuildAdvancedOutputHelp(string id) =>
+        new()
+        {
+            ["type"] = "Container",
+            ["id"] = id,
+            ["isVisible"] = false,
+            ["spacing"] = "Small",
+            ["style"] = "emphasis",
+            ["items"] = new JsonArray
+            {
+                new JsonObject
+                {
+                    ["type"] = "TextBlock",
+                    ["text"] = "Advanced output format",
+                    ["weight"] = "Bolder",
+                    ["wrap"] = true,
+                },
+                new JsonObject
+                {
+                    ["type"] = "TextBlock",
+                    ["text"] = "The response must be a JSON object. All five fields are optional. If present, title, subtitle, details, and section must be strings; tags must be an array of strings. Property names are lowercase and case-sensitive. Extra properties are ignored.",
+                    ["wrap"] = true,
+                },
+                new JsonObject
+                {
+                    ["type"] = "TextBlock",
+                    ["text"] = "{\n  \"title\": \"Result title\",\n  \"subtitle\": \"Supporting text\",\n  \"details\": \"Full content copied when selected\",\n  \"section\": \"Section name\",\n  \"tags\": [\"tag one\", \"tag two\"]\n}",
+                    ["fontType"] = "Monospace",
+                    ["wrap"] = true,
+                },
+                new JsonObject
+                {
+                    ["type"] = "TextBlock",
+                    ["text"] = "A single unlabelled or json Markdown code fence is accepted. Invalid formatted output automatically uses the normal output rules. The app does not add JSON instructions to your prompt, so request this format in the prompt when needed.",
+                    ["isSubtle"] = true,
+                    ["wrap"] = true,
+                },
+            },
         };
 
     private static string GetProviderName(
@@ -1096,6 +1228,7 @@ internal sealed partial class UserCommandsSettingsForm : FormContent
     {
         RemoveDraftInput($"name_{commandId}");
         RemoveDraftInput($"format_{commandId}");
+        RemoveDraftInput($"advancedOutput_{commandId}");
         RemoveDraftInput($"delay_{commandId}");
         RemoveDraftInput($"variations_{commandId}");
         RemoveDraftInput($"provider_{commandId}");

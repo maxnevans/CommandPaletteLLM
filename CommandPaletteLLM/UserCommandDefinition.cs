@@ -22,6 +22,8 @@ internal sealed class UserCommandDefinition
 
     public int ResponseVariations { get; set; } = 1;
 
+    public bool EnableAdvancedOutput { get; set; }
+
     public string ProviderId { get; set; } = "default";
 
     public CommandExposure Exposure { get; set; }
@@ -43,6 +45,7 @@ internal sealed class UserCommandDefinition
         OutputFormat = OutputFormat,
         SendDelayMilliseconds = SendDelayMilliseconds,
         ResponseVariations = ResponseVariations,
+        EnableAdvancedOutput = EnableAdvancedOutput,
         ProviderId = ProviderId,
         Exposure = Exposure,
         IconPath = IconPath,

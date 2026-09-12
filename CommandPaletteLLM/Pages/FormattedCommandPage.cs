@@ -17,6 +17,7 @@ internal sealed partial class FormattedCommandPage : DynamicListPage, IDisposabl
 
     private readonly string _promptFormat;
     private readonly int _responseVariations;
+    private readonly bool _enableAdvancedOutput;
     private readonly ILlmClient _llmClient;
     private readonly TimeSpan _debounce;
     private readonly TimeSpan _retryDelay;
@@ -51,6 +52,7 @@ internal sealed partial class FormattedCommandPage : DynamicListPage, IDisposabl
     {
         _promptFormat = definition.OutputFormat;
         _responseVariations = definition.ResponseVariations;
+        _enableAdvancedOutput = definition.EnableAdvancedOutput;
         _llmClient = llmClient;
         _debounce = debounce ?? TimeSpan.FromMilliseconds(definition.SendDelayMilliseconds);
         _retryDelay = retryDelay ?? DefaultRetryDelay;
@@ -215,7 +217,11 @@ internal sealed partial class FormattedCommandPage : DynamicListPage, IDisposabl
                 requestVersion,
                 responses
                     .Select((response, index) =>
-                        (IListItem)CreateResponseItem(response, index, responses.Count))
+                        (IListItem)CreateResponseItem(
+                            response,
+                            index,
+                            responses.Count,
+                            _enableAdvancedOutput))
                     .ToArray(),
                 isLoading: false,
                 cancellationToken);
@@ -390,7 +396,43 @@ internal sealed partial class FormattedCommandPage : DynamicListPage, IDisposabl
     private static ListItem CreateStatusItem(string message) =>
         new(new NoOpCommand()) { Title = message };
 
-    private static ListItem CreateResponseItem(string response, int index, int responseCount)
+    private static ListItem CreateResponseItem(
+        string response,
+        int index,
+        int responseCount,
+        bool enableAdvancedOutput)
+    {
+        if (enableAdvancedOutput && AdvancedOutputParser.TryParse(response, out var output))
+        {
+            return CreateAdvancedResponseItem(output);
+        }
+
+        return CreateDefaultResponseItem(response, index, responseCount);
+    }
+
+    private static ListItem CreateAdvancedResponseItem(AdvancedOutput output)
+    {
+        var copyText = string.IsNullOrEmpty(output.Details) ? output.Title : output.Details;
+        return new ListItem(new CopyTextCommand(copyText))
+        {
+            Title = output.Title,
+            Subtitle = output.Subtitle,
+            TextToSuggest = copyText,
+            Section = output.Section,
+            Tags = output.Tags.Select(tag => new Tag(tag)).ToArray(),
+            Details = string.IsNullOrEmpty(output.Details) ? null : new Details
+            {
+                Title = output.Title,
+                Body = output.Details,
+                Size = ContentSize.Large,
+            },
+        };
+    }
+
+    private static ListItem CreateDefaultResponseItem(
+        string response,
+        int index,
+        int responseCount)
     {
         var lines = response
             .Split(['\r', '\n'], StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);

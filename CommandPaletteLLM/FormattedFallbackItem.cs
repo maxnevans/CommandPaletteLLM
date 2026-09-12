@@ -11,6 +11,7 @@ internal sealed partial class FormattedFallbackItem : FallbackCommandItem
 {
     private readonly StableCopyTextCommand _copyCommand;
     private readonly string _promptFormat;
+    private readonly bool _enableAdvancedOutput;
     private readonly ILlmClient _llmClient;
     private readonly TimeSpan _debounce;
     private readonly Func<string, bool>? _isTopLevelCommandQuery;
@@ -43,6 +44,7 @@ internal sealed partial class FormattedFallbackItem : FallbackCommandItem
         _copyCommand = Command as StableCopyTextCommand ??
             throw new InvalidOperationException("The fallback copy command was not initialized.");
         _promptFormat = definition.OutputFormat;
+        _enableAdvancedOutput = definition.EnableAdvancedOutput;
         _llmClient = llmClient;
         _debounce = debounce ?? TimeSpan.FromMilliseconds(definition.SendDelayMilliseconds);
         _isTopLevelCommandQuery = isTopLevelCommandQuery;
@@ -71,12 +73,14 @@ internal sealed partial class FormattedFallbackItem : FallbackCommandItem
             !OutputFormatter.TryFormat(_promptFormat, query, out var prompt, out _))
         {
             Title = string.Empty;
+            Subtitle = string.Empty;
             return;
         }
 
         var cancellation = new CancellationTokenSource();
         _requestCancellation = cancellation;
         Title = "Waiting for LLM response…";
+        Subtitle = string.Empty;
         _ = LoadResponseAsync(prompt, requestVersion, cancellation.Token);
     }
 
@@ -93,7 +97,7 @@ internal sealed partial class FormattedFallbackItem : FallbackCommandItem
                 variations: 1,
                 cancellationToken: cancellationToken)
                 .ConfigureAwait(false);
-            Publish(requestVersion, responses[0], canCopy: true, cancellationToken);
+            PublishResponse(requestVersion, responses[0], cancellationToken);
         }
         catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
         {
@@ -123,19 +127,41 @@ internal sealed partial class FormattedFallbackItem : FallbackCommandItem
         Publish(
             requestVersion,
             $"LLM request failed: {message}",
-            canCopy: false,
+            subtitle: string.Empty,
+            copyText: null,
             cancellationToken);
+
+    private void PublishResponse(
+        int requestVersion,
+        string response,
+        CancellationToken cancellationToken)
+    {
+        if (_enableAdvancedOutput && AdvancedOutputParser.TryParse(response, out var output))
+        {
+            Publish(
+                requestVersion,
+                output.Title,
+                output.Subtitle,
+                string.IsNullOrEmpty(output.Details) ? output.Title : output.Details,
+                cancellationToken);
+            return;
+        }
+
+        Publish(requestVersion, response, string.Empty, response, cancellationToken);
+    }
 
     private void Publish(
         int requestVersion,
         string title,
-        bool canCopy,
+        string subtitle,
+        string? copyText,
         CancellationToken cancellationToken)
     {
         if (!cancellationToken.IsCancellationRequested && requestVersion == _requestVersion)
         {
-            _copyCommand.SetText(canCopy ? title : null);
+            _copyCommand.SetText(copyText);
             Title = title;
+            Subtitle = subtitle;
         }
     }
 
@@ -145,6 +171,7 @@ internal sealed partial class FormattedFallbackItem : FallbackCommandItem
         Interlocked.Increment(ref _requestVersion);
         _copyCommand.SetText(null);
         Title = string.Empty;
+        Subtitle = string.Empty;
     }
 
     internal void EndpointStatusChanged(bool allowGlobalResults)
