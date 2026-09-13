@@ -188,10 +188,6 @@ internal sealed partial class UserCommandsSettingsForm : FormContent
         provider.Name = ReadText(input, $"providerName_{provider.Id}", provider.Name);
         provider.BaseUrl = ReadText(input, $"providerBaseUrl_{provider.Id}", provider.BaseUrl).Trim();
         provider.Model = ReadText(input, $"providerModel_{provider.Id}", provider.Model).Trim();
-        var consentKey = $"providerRemoteConsent_{provider.Id}";
-        provider.ConsentedRemoteOrigin = ReadBoolean(input, consentKey)
-            ? ProviderDataConsent.GetConsentOrigin(provider.BaseUrl)
-            : string.Empty;
         if (!string.IsNullOrEmpty(apiKey))
         {
             provider.ApiKey = apiKey;
@@ -212,10 +208,6 @@ internal sealed partial class UserCommandsSettingsForm : FormContent
             Name = existing.Name,
             ApiKey = string.IsNullOrEmpty(apiKey) ? existing.ApiKey : apiKey,
         };
-        settings.ConsentedRemoteOrigin = ReadBoolean(input, "providerRemoteConsent")
-            ? ProviderDataConsent.GetConsentOrigin(settings.BaseUrl)
-            : string.Empty;
-
         if (!LlmProviderSettingsStore.IsValid(settings))
         {
             return ShowError("Provider base URL must be an absolute HTTP or HTTPS URL, and model is required.");
@@ -474,14 +466,6 @@ internal sealed partial class UserCommandsSettingsForm : FormContent
                 ["text"] = "Connect one or more OpenAI-compatible chat-completions APIs, including llama.cpp servers.",
                 ["wrap"] = true,
             },
-            new JsonObject
-            {
-                ["type"] = "TextBlock",
-                ["text"] = "API keys are protected for your Windows account. Remote endpoints receive prompts only after you allow them. [Privacy policy](https://github.com/maxnevans/CommandPaletteLLM/blob/main/PRIVACY.md)",
-                ["isSubtle"] = true,
-                ["wrap"] = true,
-                ["spacing"] = "Small",
-            },
         };
 
         foreach (var provider in providers)
@@ -703,23 +687,15 @@ internal sealed partial class UserCommandsSettingsForm : FormContent
                             string.IsNullOrEmpty(provider.ApiKey)
                                 ? "Optional bearer token"
                                 : "Saved; leave blank to keep it",
-                             ReadText(draftInputs, $"providerApiKey_{provider.Id}")),
+                            ReadText(draftInputs, $"providerApiKey_{provider.Id}")),
                         new JsonObject
                         {
                             ["type"] = "TextBlock",
-                            ["text"] = "Remote providers receive the prompts you submit. Command Palette LLM does not operate a proxy or telemetry service.",
+                            ["text"] = "Prompts are sent directly to this provider. Its operator may process or retain them under its own terms and privacy policy. API keys are protected for your Windows account.",
                             ["isSubtle"] = true,
                             ["wrap"] = true,
                             ["spacing"] = "Small",
                         },
-                        BuildToggleInput(
-                            $"providerRemoteConsent_{provider.Id}",
-                            "Allow sending prompts to this provider when it is not running on this PC",
-                            ReadBoolean(
-                                draftInputs,
-                                $"providerRemoteConsent_{provider.Id}",
-                                ProviderDataConsent.RequiresConsent(provider.BaseUrl) &&
-                                ProviderDataConsent.HasConsent(provider))),
                         new JsonObject
                         {
                             ["type"] = "ActionSet",
@@ -1273,7 +1249,6 @@ internal sealed partial class UserCommandsSettingsForm : FormContent
         RemoveDraftInput($"providerBaseUrl_{providerId}");
         RemoveDraftInput($"providerModel_{providerId}");
         RemoveDraftInput($"providerApiKey_{providerId}");
-        RemoveDraftInput($"providerRemoteConsent_{providerId}");
     }
 
     private void RemoveDraftInput(string key) => _draftInputs.Remove(key);

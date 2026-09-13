@@ -368,28 +368,9 @@ public sealed class UserCommandsTests
         Assert.Equal("secret", settings.ApiKey);
         Assert.DoesNotContain("secret", form.TemplateJson, StringComparison.Ordinal);
         Assert.Contains("Saved; leave blank to keep it", form.TemplateJson, StringComparison.Ordinal);
-    }
-
-    [Fact]
-    public void Settings_RequiresExplicitConsentForRemoteProvider()
-    {
-        var commandStore = new UserCommandStore(filePath: null);
-        var providerStore = new LlmProviderSettingsStore(filePath: null);
-        var provider = new CommandPaletteLLMCommandsProvider(commandStore, providerStore);
-        var form = GetSettingsForm(provider);
-
-        form.SubmitForm(
-            """{"providerBaseUrl":"https://example.test/v1","providerModel":"test-model","providerRemoteConsent":"false"}""",
-            """{"actionId":"save-provider"}""");
-
-        Assert.False(ProviderDataConsent.HasConsent(providerStore.Get()));
-
-        form.SubmitForm(
-            """{"providerBaseUrl":"https://example.test/v1","providerModel":"test-model","providerRemoteConsent":"true"}""",
-            """{"actionId":"save-provider"}""");
-
-        Assert.Equal("https://example.test", providerStore.Get().ConsentedRemoteOrigin);
-        Assert.True(ProviderDataConsent.HasConsent(providerStore.Get()));
+        Assert.Contains("Prompts are sent directly to this provider", form.TemplateJson, StringComparison.Ordinal);
+        Assert.DoesNotContain("providerRemoteConsent", form.TemplateJson, StringComparison.Ordinal);
+        Assert.DoesNotContain("[Privacy policy]", form.TemplateJson, StringComparison.Ordinal);
     }
 
     [Fact]
@@ -891,7 +872,6 @@ public sealed class UserCommandsTests
                 Name = "Second",
                 BaseUrl = "https://second.example/v1",
                 Model = "second-model",
-                ConsentedRemoteOrigin = "https://second.example",
             },
         ]);
         var handler = new RecordingHttpMessageHandler(
@@ -1137,56 +1117,6 @@ public sealed class UserCommandsTests
                 Directory.Delete(directory, recursive: true);
             }
         }
-    }
-
-    [Theory]
-    [InlineData("http://localhost:8080/v1")]
-    [InlineData("http://127.0.0.1:8080/v1")]
-    [InlineData("http://[::1]:8080/v1")]
-    public void ProviderConsent_IsNotRequiredForLoopbackEndpoints(string baseUrl)
-    {
-        var provider = new LlmProviderSettings { BaseUrl = baseUrl };
-
-        Assert.False(ProviderDataConsent.RequiresConsent(baseUrl));
-        Assert.True(ProviderDataConsent.HasConsent(provider));
-    }
-
-    [Fact]
-    public async Task OpenAiClient_BlocksRemoteProviderWithoutConsent()
-    {
-        var store = new LlmProviderSettingsStore(filePath: null);
-        store.Replace(new LlmProviderSettings
-        {
-            BaseUrl = "https://example.test/v1",
-            Model = "test-model",
-        });
-        var handler = new RecordingHttpMessageHandler(
-            """{"choices":[{"message":{"role":"assistant","content":"answer"}}]}""");
-        var client = new OpenAiCompatibleLlmClient(store, new HttpClient(handler));
-
-        var exception = await Assert.ThrowsAsync<LlmRequestException>(() =>
-            client.CompleteAsync("Prompt", 1, CancellationToken.None));
-
-        Assert.Contains("Allow prompt transmission", exception.Message, StringComparison.Ordinal);
-        Assert.Null(handler.RequestUri);
-    }
-
-    [Fact]
-    public void ProviderStore_ResetsConsentWhenRemoteOriginChanges()
-    {
-        var store = new LlmProviderSettingsStore(filePath: null);
-        store.Replace(new LlmProviderSettings
-        {
-            BaseUrl = "https://first.example/v1",
-            Model = "test-model",
-            ConsentedRemoteOrigin = "https://first.example",
-        });
-        var provider = store.Get();
-        provider.BaseUrl = "https://second.example/v1";
-
-        store.Replace(provider);
-
-        Assert.Empty(store.Get().ConsentedRemoteOrigin);
     }
 
     private static CommandPaletteLLMCommandsProvider CreateProvider(out UserCommandStore store)

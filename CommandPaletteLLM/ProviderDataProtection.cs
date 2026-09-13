@@ -130,41 +130,4 @@ internal sealed class StoredLlmProviderSettings
 
     public string? ProtectedApiKey { get; set; }
 
-    public string? ConsentedRemoteOrigin { get; set; }
-}
-
-internal static class ProviderDataConsent
-{
-    public static bool RequiresConsent(string baseUrl) =>
-        TryGetRemoteOrigin(baseUrl, out _);
-
-    public static bool HasConsent(LlmProviderSettings provider) =>
-        !TryGetRemoteOrigin(provider.BaseUrl, out var origin) ||
-        string.Equals(
-            origin,
-            provider.ConsentedRemoteOrigin,
-            StringComparison.OrdinalIgnoreCase);
-
-    public static string GetConsentOrigin(string baseUrl) =>
-        TryGetRemoteOrigin(baseUrl, out var origin) ? origin : string.Empty;
-
-    private static bool TryGetRemoteOrigin(string baseUrl, out string origin)
-    {
-        origin = string.Empty;
-        if (!Uri.TryCreate(baseUrl, UriKind.Absolute, out var uri))
-        {
-            return false;
-        }
-
-        if (uri.IsLoopback ||
-            string.Equals(uri.Host, "localhost", StringComparison.OrdinalIgnoreCase))
-        {
-            return false;
-        }
-
-        origin = uri.GetComponents(
-            UriComponents.SchemeAndServer,
-            UriFormat.UriEscaped).TrimEnd('/');
-        return true;
-    }
 }

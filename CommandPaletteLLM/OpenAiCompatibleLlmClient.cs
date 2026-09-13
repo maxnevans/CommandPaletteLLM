@@ -67,12 +67,6 @@ internal sealed class OpenAiCompatibleLlmClient : ILlmClient
             throw new LlmRequestException("Configure a valid provider URL and model in extension settings.");
         }
 
-        if (!ProviderDataConsent.HasConsent(settings))
-        {
-            throw new LlmRequestException(
-                "Allow prompt transmission to this remote provider in extension settings before using it.");
-        }
-
         using var request = new HttpRequestMessage(
             HttpMethod.Post,
             BuildChatCompletionsUri(settings.BaseUrl));

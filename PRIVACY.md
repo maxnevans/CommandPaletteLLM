@@ -31,11 +31,10 @@ from your PC to the OpenAI-compatible endpoint assigned to that command. It may
 also request the endpoint's `/models` route to check availability. An optional
 API key is sent as a bearer credential.
 
-Loopback endpoints on your PC do not require remote-data consent. Before the
-application contacts any other endpoint, you must explicitly allow prompt
-transmission for that provider. Consent is tied to the endpoint origin and is
-reset if its scheme, host, or port changes. You can revoke consent or delete the
-provider in extension settings.
+You choose each endpoint by configuring and saving its URL in extension
+settings, and you choose which provider each command uses. Invoking a command
+sends its resulting prompt to the assigned provider. You can stop future
+transmissions by assigning the command to another provider or deleting it.
 
 The operator of a configured endpoint processes data under its own terms and
 privacy policy. Review those terms before sending personal, confidential, or

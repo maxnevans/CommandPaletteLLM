@@ -112,9 +112,7 @@ internal sealed class LlmEndpointMonitor : ILlmEndpointMonitor
         CancellationToken cancellationToken)
     {
         var settings = _settingsStore.Get(_providerId);
-        if (settings is null ||
-            !LlmProviderSettingsStore.IsValid(settings) ||
-            !ProviderDataConsent.HasConsent(settings))
+        if (settings is null || !LlmProviderSettingsStore.IsValid(settings))
         {
             ReportProbeResult(LlmEndpointStatus.Unavailable, generation);
             return false;

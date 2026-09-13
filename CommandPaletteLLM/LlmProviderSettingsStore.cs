@@ -229,7 +229,6 @@ internal sealed class LlmProviderSettingsStore
             BaseUrl = stored.BaseUrl,
             Model = stored.Model,
             ApiKey = apiKey,
-            ConsentedRemoteOrigin = stored.ConsentedRemoteOrigin ?? string.Empty,
         };
     }
 
@@ -244,9 +243,6 @@ internal sealed class LlmProviderSettingsStore
             ProtectedApiKey = string.IsNullOrEmpty(provider.ApiKey)
                 ? null
                 : dataProtector.Protect(provider.ApiKey),
-            ConsentedRemoteOrigin = string.IsNullOrEmpty(provider.ConsentedRemoteOrigin)
-                ? null
-                : provider.ConsentedRemoteOrigin,
         };
 
     private static LlmProviderSettings Normalize(LlmProviderSettings provider)
@@ -256,11 +252,6 @@ internal sealed class LlmProviderSettingsStore
         normalized.Name = string.IsNullOrWhiteSpace(normalized.Name) ? "Local LLM" : normalized.Name.Trim();
         normalized.BaseUrl = normalized.BaseUrl.Trim();
         normalized.Model = normalized.Model.Trim();
-        if (!ProviderDataConsent.HasConsent(normalized))
-        {
-            normalized.ConsentedRemoteOrigin = string.Empty;
-        }
-
         return normalized;
     }
 

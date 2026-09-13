@@ -12,8 +12,7 @@ to turn local language models into fast, reusable productivity commands.
 Connect an OpenAI-compatible endpoint running on your own PC, create focused
 commands such as summarize or rewrite, and invoke them without leaving Command
 Palette. You control each prompt template, model, delay, result count, and where
-the command appears. Hosted OpenAI-compatible endpoints are also supported when
-you explicitly allow prompt transmission for that provider.
+the command appears. Hosted OpenAI-compatible endpoints are also supported.
 
 Provider credentials are encrypted for your Windows account. The extension has
 no publisher-operated backend, advertising, analytics, or telemetry. Prompts go
@@ -32,7 +31,7 @@ affiliated with or endorsed by Microsoft or OpenAI.
 - Create reusable prompt-driven Command Palette commands without changing code
 - Connect multiple local or hosted OpenAI-compatible providers
 - Keep provider API keys encrypted with Windows per-user protection
-- Require explicit consent before sending prompts to remote providers
+- Send prompts directly to the provider configured for each command
 - Display plain text or structured titles, subtitles, details, sections, and tags
 - Request multiple response variations and copy results immediately
 - Assign custom icons and choose top-level or fallback command placement
