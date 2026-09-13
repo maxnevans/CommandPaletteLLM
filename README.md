@@ -168,13 +168,39 @@ Publisher:            CN=D8B7BDC7-1445-4AE6-BEEC-E9C2D0FD7ACD
 PublisherDisplayName: maxnevans
 ```
 
-Create the Store submission with Visual Studio's standard single-project MSIX workflow:
+Visual Studio 2026 exposes packaging as **Pack** on the project context menu.
+The selected solution configuration and platform determine which package it
+creates. Prepare Store packages as follows:
 
-1. Set the package version in `CommandPaletteLLM\Package.appxmanifest`. Use four numeric components, keep the final component `0`, and choose a version higher than the previous Store submission.
-2. Right-click the `CommandPaletteLLM` project and select **Package and Publish → Create App Packages**.
-3. Select **Microsoft Store**, associate the project with the existing Partner Center product if prompted, and continue.
-4. Select **Release**, include **x64** and **ARM64**, create a bundle, and disable automatic version increments so the manifest remains the version source.
-5. Create the packages and upload the generated `.msixupload` from the ignored `AppPackages` directory under **Partner Center → Command Palette LLM → Product release → Start submission → Packages**.
+1. Confirm that the package identity above still exactly matches **Partner Center → Command Palette LLM → Product management → Product identity**. The values are case-sensitive.
+2. Set the package version in `CommandPaletteLLM\Package.appxmanifest`. Use four numeric components, keep the final component `0`, and choose a version higher than the previous Store submission.
+3. In the Visual Studio toolbar, select **Release** and **x64**.
+4. In Solution Explorer, right-click the `CommandPaletteLLM` project and select **Pack**.
+5. Confirm that the build log ends with `PackageSuccessfullyCreated` and names `CommandPaletteLLM\AppPackages\CommandPaletteLLM_<version>_x64.msixupload`.
+6. Change the toolbar platform to **ARM64** and select **Pack** again. Confirm that `CommandPaletteLLM_<version>_arm64.msixupload` was created in the same directory.
+7. Upload both top-level `.msixupload` files under **Partner Center → Command Palette LLM → Product release → Start submission → Packages**. Partner Center selects the applicable architecture for each device.
+
+The Release settings in `CommandPaletteLLM.csproj` select `StoreOnly` packaging,
+create a separate upload for each architecture, and leave signing disabled so
+Microsoft Store can sign the certified packages. Do not upload files from an
+`*_Test` directory. Those directories contain local sideloading artifacts and
+installation scripts. Likewise, a filename containing `_Debug` was built with
+the development package identity and is not a Store submission.
+
+The expected output directory after preparing both architectures is:
+
+```text
+CommandPaletteLLM/AppPackages/
+├── CommandPaletteLLM_<version>_x64.msixupload
+├── CommandPaletteLLM_<version>_arm64.msixupload
+├── CommandPaletteLLM_<version>_x64_Test/       Local test artifacts
+└── CommandPaletteLLM_<version>_arm64_Test/     Local test artifacts
+```
+
+Before uploading, install and exercise the x64 test package on an x64 system,
+test the ARM64 package on ARM64 hardware when available, and run the current
+Windows App Certification Kit. The `AppPackages` and `BundleArtifacts`
+directories are generated output and must remain uncommitted.
 
 Microsoft signs the package after certification. Complete Pricing and availability, Properties, Age ratings, Store listings, and Submission options before selecting **Submit for certification**.
 

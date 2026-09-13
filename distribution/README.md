@@ -5,6 +5,9 @@ systems after the corresponding installation source is live.
 
 - `STORE-LISTING-en-US.md` contains the Partner Center fields, certification
   notes, and screenshot captions.
+- [Build a Microsoft Store submission](../README.md#build-a-microsoft-store-submission)
+  documents the Visual Studio 2026 **Pack** workflow and identifies which
+  generated `.msixupload` files belong in Partner Center.
 - After Microsoft Store certification, create the Gallery `extension.json`
   using the assigned Store product ID, then copy it with `gallery/icon.png` and
   the approved screenshots to
