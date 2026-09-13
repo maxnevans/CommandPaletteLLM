@@ -206,8 +206,9 @@ Microsoft signs the package after certification. Complete Pricing and availabili
 
 The Store listing and certification notes must explain that this is an extension requiring Microsoft PowerToys with Command Palette enabled. Include instructions for opening Command Palette and exercising at least one configured LLM command so certification can test the extension.
 
-The public preview version is `0.1.0`; its first Store package version is
-`1.0.0.0` because Microsoft Store package versions cannot begin with zero.
+The public preview version is `0.0.1`; its Store package version is `0.0.1.0`.
+The fourth component is required by the MSIX package identity format and is
+kept at zero for Store submissions.
 
 Store distribution is the only maintained end-user installation path. The repository does not produce or support a private, self-signed, or unsigned installer.
 

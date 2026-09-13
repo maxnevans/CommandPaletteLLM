@@ -10,7 +10,7 @@
   <Identity
     Name="maxnevans.CommandPaletteLLM.Development"
     Publisher="CN=maxnevans"
-    Version="1.0.0.0" />
+    Version="0.0.1.0" />
 
   <Properties>
     <DisplayName>Command Palette LLM (Development)</DisplayName>
