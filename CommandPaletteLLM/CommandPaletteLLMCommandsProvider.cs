@@ -11,6 +11,7 @@ public partial class CommandPaletteLLMCommandsProvider : CommandProvider
 {
     private readonly UserCommandStore _store;
     private readonly LlmProviderSettingsStore _providerSettingsStore;
+    private readonly GlobalSettingsStore _globalSettingsStore;
     private readonly ILlmClient? _llmClientOverride;
     private readonly ILlmEndpointMonitor? _endpointMonitorOverride;
     private readonly Dictionary<string, ProviderRuntime> _providerRuntimes = [];
@@ -21,7 +22,10 @@ public partial class CommandPaletteLLMCommandsProvider : CommandProvider
     private IFallbackCommandItem[] _fallbackCommands = [];
 
     public CommandPaletteLLMCommandsProvider()
-        : this(new UserCommandStore(), new LlmProviderSettingsStore())
+        : this(
+            new UserCommandStore(),
+            new LlmProviderSettingsStore(),
+            new GlobalSettingsStore())
     {
     }
 
@@ -29,6 +33,7 @@ public partial class CommandPaletteLLMCommandsProvider : CommandProvider
         : this(
             store,
             new LlmProviderSettingsStore(filePath: null),
+            new GlobalSettingsStore(filePath: null),
             endpointMonitor: new AssumedAvailableEndpointMonitor())
     {
     }
@@ -38,9 +43,25 @@ public partial class CommandPaletteLLMCommandsProvider : CommandProvider
         LlmProviderSettingsStore providerSettingsStore,
         ILlmClient? llmClient = null,
         ILlmEndpointMonitor? endpointMonitor = null)
+        : this(
+            store,
+            providerSettingsStore,
+            new GlobalSettingsStore(filePath: null),
+            llmClient,
+            endpointMonitor)
+    {
+    }
+
+    internal CommandPaletteLLMCommandsProvider(
+        UserCommandStore store,
+        LlmProviderSettingsStore providerSettingsStore,
+        GlobalSettingsStore globalSettingsStore,
+        ILlmClient? llmClient = null,
+        ILlmEndpointMonitor? endpointMonitor = null)
     {
         _store = store;
         _providerSettingsStore = providerSettingsStore;
+        _globalSettingsStore = globalSettingsStore;
         _llmClientOverride = llmClient;
         _endpointMonitorOverride = endpointMonitor ?? (llmClient is null
             ? null
@@ -51,6 +72,8 @@ public partial class CommandPaletteLLMCommandsProvider : CommandProvider
         Settings = new UserCommandsSettings(
             _store,
             _providerSettingsStore,
+            _globalSettingsStore,
+            ReloadCommands,
             ReloadCommands,
             ProviderSettingsChanged);
         ReloadCommands(raiseItemsChanged: false);
@@ -73,6 +96,7 @@ public partial class CommandPaletteLLMCommandsProvider : CommandProvider
 
         _commandPageActive = false;
         var definitions = _store.GetCommands();
+        var advancedOutputSystemPrompt = _globalSettingsStore.Get().AdvancedOutputSystemPrompt;
         var commandNames = definitions
             .Select(definition => definition.Name)
             .ToHashSet(StringComparer.OrdinalIgnoreCase);
@@ -84,7 +108,8 @@ public partial class CommandPaletteLLMCommandsProvider : CommandProvider
                     definition,
                     runtime.Client,
                     pageAccessed: CommandPageAccessed,
-                    endpointMonitor: runtime.Monitor);
+                    endpointMonitor: runtime.Monitor,
+                    advancedOutputSystemPrompt: advancedOutputSystemPrompt);
             })
             .ToArray();
         _commands = _commandPages
@@ -103,7 +128,8 @@ public partial class CommandPaletteLLMCommandsProvider : CommandProvider
                     runtime.Client,
                     isTopLevelCommandQuery: query => commandNames.Contains(query.Trim()),
                     rootQueryObserved: RootQueryObserved,
-                    endpointMonitor: runtime.Monitor);
+                    endpointMonitor: runtime.Monitor,
+                    advancedOutputSystemPrompt: advancedOutputSystemPrompt);
             })
             .ToArray();
         _fallbackCommands = _formattedFallbackItems

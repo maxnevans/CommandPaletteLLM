@@ -13,22 +13,29 @@ internal sealed partial class UserCommandsSettingsForm : FormContent
 {
     private readonly UserCommandStore _store;
     private readonly LlmProviderSettingsStore _providerSettingsStore;
+    private readonly GlobalSettingsStore _globalSettingsStore;
     private readonly Action _commandsChanged;
+    private readonly Action _globalSettingsChanged;
     private readonly Action _providerSettingsChanged;
     private readonly CommandIconStore _iconStore;
     private readonly HashSet<string> _expandedCommandIds = new(StringComparer.Ordinal);
     private readonly HashSet<string> _expandedProviderIds = new(StringComparer.Ordinal);
     private readonly JsonObject _draftInputs = [];
+    private bool _globalSettingsExpanded;
 
     public UserCommandsSettingsForm(
         UserCommandStore store,
         LlmProviderSettingsStore providerSettingsStore,
+        GlobalSettingsStore globalSettingsStore,
         Action commandsChanged,
+        Action globalSettingsChanged,
         Action providerSettingsChanged)
     {
         _store = store;
         _providerSettingsStore = providerSettingsStore;
+        _globalSettingsStore = globalSettingsStore;
         _commandsChanged = commandsChanged;
+        _globalSettingsChanged = globalSettingsChanged;
         _providerSettingsChanged = providerSettingsChanged;
         _iconStore = new CommandIconStore(store.StorageDirectory);
         Refresh();
@@ -51,6 +58,46 @@ internal sealed partial class UserCommandsSettingsForm : FormContent
             }
 
             CaptureDraftInputs(input);
+
+            if (string.Equals(actionId, "edit-global", StringComparison.Ordinal))
+            {
+                _globalSettingsExpanded = true;
+                Refresh();
+                return CommandResult.KeepOpen();
+            }
+
+            if (string.Equals(actionId, "cancel-global", StringComparison.Ordinal))
+            {
+                _globalSettingsExpanded = false;
+                RemoveDraftInput("advancedOutputSystemPrompt");
+                Refresh();
+                return CommandResult.KeepOpen();
+            }
+
+            if (string.Equals(actionId, "save-global", StringComparison.Ordinal))
+            {
+                var settings = _globalSettingsStore.Get();
+                settings.AdvancedOutputSystemPrompt = ReadText(
+                    input,
+                    "advancedOutputSystemPrompt",
+                    settings.AdvancedOutputSystemPrompt);
+                _globalSettingsStore.Replace(settings);
+                _globalSettingsExpanded = false;
+                RemoveDraftInput("advancedOutputSystemPrompt");
+                _globalSettingsChanged();
+                Refresh();
+                return CommandResult.KeepOpen();
+            }
+
+            if (string.Equals(actionId, "reset-global", StringComparison.Ordinal))
+            {
+                _globalSettingsStore.ResetAdvancedOutputSystemPrompt();
+                _globalSettingsExpanded = false;
+                RemoveDraftInput("advancedOutputSystemPrompt");
+                _globalSettingsChanged();
+                Refresh();
+                return CommandResult.KeepOpen();
+            }
 
             const string editPrefix = "edit:";
             if (actionId?.StartsWith(editPrefix, StringComparison.Ordinal) == true)
@@ -417,8 +464,10 @@ internal sealed partial class UserCommandsSettingsForm : FormContent
     private void Refresh(string? errorMessage = null)
     {
         TemplateJson = BuildCard(
+            _globalSettingsStore.Get(),
             _providerSettingsStore.GetProviders(),
             _store.GetCommands(),
+            _globalSettingsExpanded,
             _expandedProviderIds,
             _expandedCommandIds,
             _draftInputs,
@@ -436,8 +485,10 @@ internal sealed partial class UserCommandsSettingsForm : FormContent
         "IL2026",
         Justification = "The card builder adds only primitive values and explicit JsonNode instances.")]
     private static JsonObject BuildCard(
+        GlobalSettings globalSettings,
         IReadOnlyList<LlmProviderSettings> providers,
         IReadOnlyList<UserCommandDefinition> commands,
+        bool expandedGlobalSettings,
         HashSet<string> expandedProviderIds,
         HashSet<string> expandedCommandIds,
         JsonObject draftInputs,
@@ -448,9 +499,19 @@ internal sealed partial class UserCommandsSettingsForm : FormContent
             new JsonObject
             {
                 ["type"] = "TextBlock",
+                ["text"] = "Global",
+                ["size"] = "Large",
+                ["weight"] = "Bolder",
+            },
+            BuildGlobalSettingsEditor(globalSettings, expandedGlobalSettings, draftInputs),
+            new JsonObject
+            {
+                ["type"] = "TextBlock",
                 ["text"] = "LLM providers",
                 ["size"] = "Large",
                 ["weight"] = "Bolder",
+                ["separator"] = true,
+                ["spacing"] = "ExtraLarge",
             },
             new JsonObject
             {
@@ -566,6 +627,142 @@ internal sealed partial class UserCommandsSettingsForm : FormContent
             ["type"] = "AdaptiveCard",
             ["version"] = "1.5",
             ["body"] = body,
+        };
+    }
+
+    [UnconditionalSuppressMessage(
+        "AOT",
+        "IL3050",
+        Justification = "The card builder adds only primitive values and explicit JsonNode instances.")]
+    [UnconditionalSuppressMessage(
+        "Trimming",
+        "IL2026",
+        Justification = "The card builder adds only primitive values and explicit JsonNode instances.")]
+    private static JsonObject BuildGlobalSettingsEditor(
+        GlobalSettings settings,
+        bool isExpanded,
+        JsonObject draftInputs)
+    {
+        var prompt = settings.AdvancedOutputSystemPrompt;
+        var status = string.IsNullOrWhiteSpace(prompt)
+            ? "Disabled"
+            : string.Equals(
+                prompt,
+                GlobalSettings.DefaultAdvancedOutputSystemPrompt,
+                StringComparison.Ordinal)
+                ? "Default"
+                : "Customized";
+
+        return new JsonObject
+        {
+            ["type"] = "Container",
+            ["style"] = "emphasis",
+            ["spacing"] = "Medium",
+            ["items"] = new JsonArray
+            {
+                new JsonObject
+                {
+                    ["type"] = "Container",
+                    ["id"] = "global_display",
+                    ["isVisible"] = !isExpanded,
+                    ["items"] = new JsonArray
+                    {
+                        new JsonObject
+                        {
+                            ["type"] = "ColumnSet",
+                            ["columns"] = new JsonArray
+                            {
+                                new JsonObject
+                                {
+                                    ["type"] = "Column",
+                                    ["width"] = "stretch",
+                                    ["items"] = new JsonArray
+                                    {
+                                        new JsonObject
+                                        {
+                                            ["type"] = "TextBlock",
+                                            ["text"] = "Advanced output system prompt",
+                                            ["weight"] = "Bolder",
+                                            ["wrap"] = true,
+                                        },
+                                        new JsonObject
+                                        {
+                                            ["type"] = "TextBlock",
+                                            ["text"] = status,
+                                            ["isSubtle"] = true,
+                                            ["spacing"] = "Small",
+                                        },
+                                    },
+                                },
+                                new JsonObject
+                                {
+                                    ["type"] = "Column",
+                                    ["width"] = "auto",
+                                    ["verticalContentAlignment"] = "Center",
+                                    ["items"] = new JsonArray
+                                    {
+                                        new JsonObject
+                                        {
+                                            ["type"] = "ActionSet",
+                                            ["horizontalAlignment"] = "Right",
+                                            ["actions"] = new JsonArray
+                                            {
+                                                BuildSubmitAction(
+                                                    "✎",
+                                                    "edit-global",
+                                                    "Edit global advanced output prompt",
+                                                    associatedInputs: "none"),
+                                            },
+                                        },
+                                    },
+                                },
+                            },
+                        },
+                    },
+                },
+                new JsonObject
+                {
+                    ["type"] = "Container",
+                    ["id"] = "global_editor",
+                    ["isVisible"] = isExpanded,
+                    ["items"] = new JsonArray
+                    {
+                        BuildTextInput(
+                            "advancedOutputSystemPrompt",
+                            "Advanced output system prompt",
+                            ReadText(draftInputs, "advancedOutputSystemPrompt", prompt),
+                            "Leave empty to disable automatic prompt injection.",
+                            isRequired: false,
+                            isMultiline: true),
+                        new JsonObject
+                        {
+                            ["type"] = "TextBlock",
+                            ["text"] = "Sent as a system message before the command prompt whenever advanced output is enabled. An empty value disables injection but keeps advanced response parsing enabled.",
+                            ["isSubtle"] = true,
+                            ["wrap"] = true,
+                            ["spacing"] = "Small",
+                        },
+                        new JsonObject
+                        {
+                            ["type"] = "ActionSet",
+                            ["horizontalAlignment"] = "Right",
+                            ["actions"] = new JsonArray
+                            {
+                                BuildSubmitAction(
+                                    "Reset to default",
+                                    "reset-global",
+                                    associatedInputs: "none"),
+                                BuildSubmitAction("✓", "save-global", "Save global prompt"),
+                                BuildSubmitAction(
+                                    "✕",
+                                    "cancel-global",
+                                    "Cancel editing",
+                                    associatedInputs: "none"),
+                            },
+                        },
+                    },
+                },
+            },
         };
     }
 
@@ -1087,7 +1284,7 @@ internal sealed partial class UserCommandsSettingsForm : FormContent
                 new JsonObject
                 {
                     ["type"] = "TextBlock",
-                    ["text"] = "A single unlabelled or json Markdown code fence is accepted. Invalid formatted output automatically uses the normal output rules. The app does not add JSON instructions to your prompt, so request this format in the prompt when needed.",
+                    ["text"] = "A single unlabelled or json Markdown code fence is accepted. Invalid formatted output automatically uses the normal output rules. When enabled, the app sends the global advanced output system prompt before the command prompt; edit it in the Global settings section.",
                     ["isSubtle"] = true,
                     ["wrap"] = true,
                 },

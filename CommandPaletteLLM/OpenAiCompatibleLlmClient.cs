@@ -58,6 +58,7 @@ internal sealed class OpenAiCompatibleLlmClient : ILlmClient
 
     public async Task<IReadOnlyList<string>> CompleteAsync(
         string prompt,
+        string? systemPrompt,
         string customRequestArguments,
         CancellationToken cancellationToken)
     {
@@ -70,7 +71,11 @@ internal sealed class OpenAiCompatibleLlmClient : ILlmClient
         using var request = new HttpRequestMessage(
             HttpMethod.Post,
             BuildChatCompletionsUri(settings.BaseUrl));
-        request.Content = BuildRequestContent(settings.Model, prompt, customRequestArguments);
+        request.Content = BuildRequestContent(
+            settings.Model,
+            prompt,
+            systemPrompt,
+            customRequestArguments);
 
         if (!string.IsNullOrWhiteSpace(settings.ApiKey))
         {
@@ -153,6 +158,7 @@ internal sealed class OpenAiCompatibleLlmClient : ILlmClient
     private static ByteArrayContent BuildRequestContent(
         string model,
         string prompt,
+        string? systemPrompt,
         string customRequestArguments)
     {
         if (!CustomRequestArguments.TryParse(
@@ -172,6 +178,14 @@ internal sealed class OpenAiCompatibleLlmClient : ILlmClient
                 writer.WriteString("model", model);
                 writer.WritePropertyName("messages");
                 writer.WriteStartArray();
+                if (!string.IsNullOrWhiteSpace(systemPrompt))
+                {
+                    writer.WriteStartObject();
+                    writer.WriteString("role", "system");
+                    writer.WriteString("content", systemPrompt);
+                    writer.WriteEndObject();
+                }
+
                 writer.WriteStartObject();
                 writer.WriteString("role", "user");
                 writer.WriteString("content", prompt);

@@ -133,7 +133,7 @@ If the endpoint is offline, the command page displays its connection state and r
 
 ## Advanced output
 
-Advanced output lets the model control how a result appears in Command Palette. Enable it for a command and explicitly ask the model to return a JSON object using these optional, case-sensitive fields:
+Advanced output lets the model control how a result appears in Command Palette. Enable it for a command and the extension automatically sends the global advanced output system prompt before the command prompt. The expected response is a JSON object using these case-sensitive fields:
 
 ```json
 {
@@ -147,10 +147,12 @@ Advanced output lets the model control how a result appears in Command Palette. 
 
 `title`, `subtitle`, `details`, and `section` must be strings; `tags` must be an array of strings. Extra properties are ignored. Plain JSON and a single unlabelled or `json` Markdown code fence are accepted.
 
-The extension deliberately does not inject formatting instructions into prompts. A practical prompt therefore ends with something like:
+The system prompt is shared by every command. Edit it from the collapsed **Advanced output system prompt** card in the **Global** section of extension settings, or reset it to the supplied default. Saving an empty prompt disables automatic system-message injection while leaving advanced response parsing enabled.
+
+The supplied default is:
 
 ```text
-Return only a JSON object with lowercase title, subtitle, details, section, and tags fields.
+Return only one JSON object, with no Markdown or surrounding text. Use lowercase, case-sensitive fields: "title" (required concise result), "subtitle" (optional supporting text), "details" (optional full content), "section" (optional group name), and "tags" (optional array of strings). Omit unused optional fields.
 ```
 
 If parsing fails, the response is still shown using the normal text-result layout instead of being discarded.
@@ -171,6 +173,7 @@ The effective directory contains:
 CommandPaletteLLM/
 ├── commands.json
 ├── providers.json
+├── settings.json
 └── Icons/
 ```
 

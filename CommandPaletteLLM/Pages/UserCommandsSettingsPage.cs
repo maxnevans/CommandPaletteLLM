@@ -11,7 +11,9 @@ internal sealed partial class UserCommandsSettingsPage : ContentPage
     public UserCommandsSettingsPage(
         UserCommandStore store,
         LlmProviderSettingsStore providerSettingsStore,
+        GlobalSettingsStore globalSettingsStore,
         Action commandsChanged,
+        Action globalSettingsChanged,
         Action providerSettingsChanged)
     {
         Title = "Command Palette LLM settings";
@@ -20,7 +22,9 @@ internal sealed partial class UserCommandsSettingsPage : ContentPage
         _form = new UserCommandsSettingsForm(
             store,
             providerSettingsStore,
+            globalSettingsStore,
             commandsChanged,
+            globalSettingsChanged,
             providerSettingsChanged);
     }
 

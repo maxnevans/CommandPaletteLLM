@@ -13,6 +13,7 @@ internal sealed partial class FormattedFallbackItem : FallbackCommandItem
     private readonly string _promptFormat;
     private readonly string _customRequestArguments;
     private readonly bool _enableAdvancedOutput;
+    private readonly string _advancedOutputSystemPrompt;
     private readonly ILlmClient _llmClient;
     private readonly TimeSpan _debounce;
     private readonly Func<string, bool>? _isTopLevelCommandQuery;
@@ -36,7 +37,8 @@ internal sealed partial class FormattedFallbackItem : FallbackCommandItem
         TimeSpan? debounce = null,
         Func<string, bool>? isTopLevelCommandQuery = null,
         Action? rootQueryObserved = null,
-        ILlmEndpointMonitor? endpointMonitor = null)
+        ILlmEndpointMonitor? endpointMonitor = null,
+        string advancedOutputSystemPrompt = "")
         : base(
             CreateCopyCommand(definition.Id),
             definition.Name,
@@ -47,6 +49,7 @@ internal sealed partial class FormattedFallbackItem : FallbackCommandItem
         _promptFormat = definition.OutputFormat;
         _customRequestArguments = definition.CustomRequestArguments;
         _enableAdvancedOutput = definition.EnableAdvancedOutput;
+        _advancedOutputSystemPrompt = advancedOutputSystemPrompt;
         _llmClient = llmClient;
         _debounce = debounce ?? TimeSpan.FromMilliseconds(definition.SendDelayMilliseconds);
         _isTopLevelCommandQuery = isTopLevelCommandQuery;
@@ -96,6 +99,9 @@ internal sealed partial class FormattedFallbackItem : FallbackCommandItem
             await Task.Delay(_debounce, cancellationToken).ConfigureAwait(false);
             var responses = await _llmClient.CompleteAsync(
                 prompt,
+                _enableAdvancedOutput && !string.IsNullOrWhiteSpace(_advancedOutputSystemPrompt)
+                    ? _advancedOutputSystemPrompt
+                    : null,
                 customRequestArguments: _customRequestArguments,
                 cancellationToken: cancellationToken)
                 .ConfigureAwait(false);

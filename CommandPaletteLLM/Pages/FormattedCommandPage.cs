@@ -18,6 +18,7 @@ internal sealed partial class FormattedCommandPage : DynamicListPage, IDisposabl
     private readonly string _promptFormat;
     private readonly string _customRequestArguments;
     private readonly bool _enableAdvancedOutput;
+    private readonly string _advancedOutputSystemPrompt;
     private readonly ILlmClient _llmClient;
     private readonly TimeSpan _debounce;
     private readonly TimeSpan _retryDelay;
@@ -48,11 +49,13 @@ internal sealed partial class FormattedCommandPage : DynamicListPage, IDisposabl
         Action? pageAccessed = null,
         ILlmEndpointMonitor? endpointMonitor = null,
         TimeSpan? retryDelay = null,
-        TimeSpan? statusUpdateInterval = null)
+        TimeSpan? statusUpdateInterval = null,
+        string advancedOutputSystemPrompt = "")
     {
         _promptFormat = definition.OutputFormat;
         _customRequestArguments = definition.CustomRequestArguments;
         _enableAdvancedOutput = definition.EnableAdvancedOutput;
+        _advancedOutputSystemPrompt = advancedOutputSystemPrompt;
         _llmClient = llmClient;
         _debounce = debounce ?? TimeSpan.FromMilliseconds(definition.SendDelayMilliseconds);
         _retryDelay = retryDelay ?? DefaultRetryDelay;
@@ -211,6 +214,9 @@ internal sealed partial class FormattedCommandPage : DynamicListPage, IDisposabl
             _requestInFlight = true;
             var responses = await _llmClient.CompleteAsync(
                 prompt,
+                _enableAdvancedOutput && !string.IsNullOrWhiteSpace(_advancedOutputSystemPrompt)
+                    ? _advancedOutputSystemPrompt
+                    : null,
                 _customRequestArguments,
                 cancellationToken).ConfigureAwait(false);
             Publish(

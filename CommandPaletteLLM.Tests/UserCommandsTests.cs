@@ -128,6 +128,80 @@ public sealed class UserCommandsTests
     }
 
     [Fact]
+    public void Settings_GlobalPromptStartsCollapsedAndSupportsEditSaveCancelAndReset()
+    {
+        var commandStore = new UserCommandStore(filePath: null);
+        var providerStore = new LlmProviderSettingsStore(filePath: null);
+        var globalStore = new GlobalSettingsStore(filePath: null);
+        var provider = new CommandPaletteLLMCommandsProvider(
+            commandStore,
+            providerStore,
+            globalStore);
+        var form = GetSettingsForm(provider);
+        var itemsChanged = 0;
+        provider.ItemsChanged += (_, _) => itemsChanged++;
+
+        Assert.Contains("\"text\":\"Global\"", form.TemplateJson, StringComparison.Ordinal);
+        Assert.Contains("\"id\":\"global_display\",\"isVisible\":true", form.TemplateJson, StringComparison.Ordinal);
+        Assert.Contains("\"id\":\"global_editor\",\"isVisible\":false", form.TemplateJson, StringComparison.Ordinal);
+        Assert.Contains("\"text\":\"Default\"", form.TemplateJson, StringComparison.Ordinal);
+        Assert.Contains("\"id\":\"edit-global\"", form.TemplateJson, StringComparison.Ordinal);
+
+        form.SubmitForm("{}", """{"actionId":"edit-global"}""");
+
+        Assert.Contains("\"id\":\"global_editor\",\"isVisible\":true", form.TemplateJson, StringComparison.Ordinal);
+        Assert.Contains("\"id\":\"advancedOutputSystemPrompt\"", form.TemplateJson, StringComparison.Ordinal);
+        Assert.Contains("\"isMultiline\":true", form.TemplateJson, StringComparison.Ordinal);
+
+        form.SubmitForm(
+            """{"advancedOutputSystemPrompt":"Custom format instruction"}""",
+            """{"actionId":"save-global"}""");
+
+        Assert.Equal("Custom format instruction", globalStore.Get().AdvancedOutputSystemPrompt);
+        Assert.Equal(1, itemsChanged);
+        Assert.Contains("\"text\":\"Customized\"", form.TemplateJson, StringComparison.Ordinal);
+        Assert.Contains("\"id\":\"global_editor\",\"isVisible\":false", form.TemplateJson, StringComparison.Ordinal);
+
+        form.SubmitForm("{}", """{"actionId":"edit-global"}""");
+        form.SubmitForm(
+            """{"advancedOutputSystemPrompt":"Unsaved draft"}""",
+            """{"actionId":"cancel-global"}""");
+
+        Assert.Equal("Custom format instruction", globalStore.Get().AdvancedOutputSystemPrompt);
+        Assert.Equal(1, itemsChanged);
+        Assert.DoesNotContain("Unsaved draft", form.TemplateJson, StringComparison.Ordinal);
+
+        form.SubmitForm("{}", """{"actionId":"edit-global"}""");
+        form.SubmitForm("{}", """{"actionId":"reset-global"}""");
+
+        Assert.Equal(
+            GlobalSettings.DefaultAdvancedOutputSystemPrompt,
+            globalStore.Get().AdvancedOutputSystemPrompt);
+        Assert.Equal(2, itemsChanged);
+        Assert.Contains("\"text\":\"Default\"", form.TemplateJson, StringComparison.Ordinal);
+        Assert.Contains("\"id\":\"global_editor\",\"isVisible\":false", form.TemplateJson, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void Settings_GlobalPromptAllowsEmptyValueAndShowsDisabledStatus()
+    {
+        var globalStore = new GlobalSettingsStore(filePath: null);
+        var provider = new CommandPaletteLLMCommandsProvider(
+            new UserCommandStore(filePath: null),
+            new LlmProviderSettingsStore(filePath: null),
+            globalStore);
+        var form = GetSettingsForm(provider);
+
+        form.SubmitForm("{}", """{"actionId":"edit-global"}""");
+        form.SubmitForm(
+            """{"advancedOutputSystemPrompt":""}""",
+            """{"actionId":"save-global"}""");
+
+        Assert.Empty(globalStore.Get().AdvancedOutputSystemPrompt);
+        Assert.Contains("\"text\":\"Disabled\"", form.TemplateJson, StringComparison.Ordinal);
+    }
+
+    [Fact]
     public void Settings_ExistingCommandHasClearlyScopedActions()
     {
         var provider = CreateProvider(out var store);
@@ -423,6 +497,71 @@ public sealed class UserCommandsTests
         Assert.Equal("Hello Maxim!", Assert.Single(client.Prompts));
         Assert.Equal("""{"n":2}""", Assert.Single(client.RequestArguments));
         Assert.False(page.IsLoading);
+    }
+
+    [Fact]
+    public void Provider_UsesOneGlobalSystemPromptOnlyForAdvancedCommands()
+    {
+        var commandStore = new UserCommandStore(filePath: null);
+        AddCommand(
+            commandStore,
+            "Advanced",
+            "Advanced: {}",
+            "advanced",
+            sendDelayMilliseconds: 0,
+            enableAdvancedOutput: true);
+        AddCommand(
+            commandStore,
+            "Plain",
+            "Plain: {}",
+            "plain",
+            sendDelayMilliseconds: 0,
+            exposure: CommandExposure.None);
+        var globalStore = new GlobalSettingsStore(filePath: null);
+        globalStore.Replace(new GlobalSettings
+        {
+            AdvancedOutputSystemPrompt = "Shared global instruction",
+        });
+        var client = new RecordingLlmClient("{\"title\":\"Answer\"}");
+        var provider = new CommandPaletteLLMCommandsProvider(
+            commandStore,
+            new LlmProviderSettingsStore(filePath: null),
+            globalStore,
+            client);
+
+        var advancedPage = Assert.IsType<FormattedCommandPage>(
+            Assert.Single(provider.TopLevelCommands(), item => item.Title == "Advanced").Command);
+        advancedPage.SearchText = "page query";
+        var fallback = Assert.IsType<FormattedFallbackItem>(Assert.Single(provider.FallbackCommands()));
+        fallback.FallbackHandler!.UpdateQuery("fallback query");
+        var plainPage = Assert.IsType<FormattedCommandPage>(
+            Assert.Single(provider.TopLevelCommands(), item => item.Title == "Plain").Command);
+        plainPage.SearchText = "plain query";
+
+        Assert.Equal(
+            ["Shared global instruction", "Shared global instruction", null],
+            client.SystemPrompts);
+    }
+
+    [Fact]
+    public void AdvancedCommand_OmitsEmptyGlobalSystemPrompt()
+    {
+        var client = new RecordingLlmClient("{\"title\":\"Answer\"}");
+        var page = new FormattedCommandPage(
+            new UserCommandDefinition
+            {
+                Id = "advanced",
+                Name = "Advanced",
+                OutputFormat = "{}",
+                EnableAdvancedOutput = true,
+            },
+            client,
+            TimeSpan.Zero,
+            advancedOutputSystemPrompt: string.Empty);
+
+        page.SearchText = "query";
+
+        Assert.Null(Assert.Single(client.SystemPrompts));
     }
 
     [Fact]
@@ -868,7 +1007,11 @@ public sealed class UserCommandsTests
             """{"choices":[{"message":{"role":"assistant","content":"  First answer.  "}},{"message":{"role":"assistant","content":"Second answer."}}]}""");
         var client = new OpenAiCompatibleLlmClient(store, new HttpClient(handler));
 
-        var responses = await client.CompleteAsync("Explain this", string.Empty, CancellationToken.None);
+        var responses = await client.CompleteAsync(
+            "Explain this",
+            systemPrompt: null,
+            string.Empty,
+            CancellationToken.None);
 
         Assert.Equal(["First answer.", "Second answer."], responses);
         Assert.Equal("http://127.0.0.1:8080/v1/chat/completions", handler.RequestUri?.ToString());
@@ -880,6 +1023,35 @@ public sealed class UserCommandsTests
         Assert.Equal(
             "Explain this",
             requestJson.RootElement.GetProperty("messages")[0].GetProperty("content").GetString());
+    }
+
+    [Fact]
+    public async Task OpenAiClient_PrependsSystemMessageBeforeUserMessage()
+    {
+        var store = new LlmProviderSettingsStore(filePath: null);
+        store.Replace(new LlmProviderSettings
+        {
+            BaseUrl = "http://127.0.0.1:8080/v1",
+            Model = "local-model",
+        });
+        var handler = new RecordingHttpMessageHandler(
+            """{"choices":[{"message":{"content":"answer"}}]}""");
+        var client = new OpenAiCompatibleLlmClient(store, new HttpClient(handler));
+
+        await client.CompleteAsync(
+            "User prompt",
+            "System instruction",
+            """{"temperature":0.2}""",
+            CancellationToken.None);
+
+        using var requestJson = JsonDocument.Parse(Assert.IsType<string>(handler.RequestBody));
+        var messages = requestJson.RootElement.GetProperty("messages");
+        Assert.Equal(2, messages.GetArrayLength());
+        Assert.Equal("system", messages[0].GetProperty("role").GetString());
+        Assert.Equal("System instruction", messages[0].GetProperty("content").GetString());
+        Assert.Equal("user", messages[1].GetProperty("role").GetString());
+        Assert.Equal("User prompt", messages[1].GetProperty("content").GetString());
+        Assert.Equal(0.2, requestJson.RootElement.GetProperty("temperature").GetDouble());
     }
 
     [Fact]
@@ -907,7 +1079,7 @@ public sealed class UserCommandsTests
             }
             """;
 
-        await client.CompleteAsync("Prompt", arguments, CancellationToken.None);
+        await client.CompleteAsync("Prompt", systemPrompt: null, arguments, CancellationToken.None);
 
         using var requestJson = JsonDocument.Parse(Assert.IsType<string>(handler.RequestBody));
         var root = requestJson.RootElement;
@@ -942,7 +1114,7 @@ public sealed class UserCommandsTests
         var client = new OpenAiCompatibleLlmClient(store, new HttpClient(handler));
 
         var exception = await Assert.ThrowsAsync<LlmRequestException>(() =>
-            client.CompleteAsync("Prompt", arguments, CancellationToken.None));
+            client.CompleteAsync("Prompt", systemPrompt: null, arguments, CancellationToken.None));
 
         Assert.Contains("Custom request arguments", exception.Message, StringComparison.Ordinal);
         Assert.Null(handler.RequestBody);
@@ -976,7 +1148,11 @@ public sealed class UserCommandsTests
             "second",
             new HttpClient(handler));
 
-        await client.CompleteAsync("Prompt", string.Empty, CancellationToken.None);
+        await client.CompleteAsync(
+            "Prompt",
+            systemPrompt: null,
+            string.Empty,
+            CancellationToken.None);
 
         Assert.Equal("https://second.example/v1/chat/completions", handler.RequestUri?.ToString());
         using var requestJson = JsonDocument.Parse(Assert.IsType<string>(handler.RequestBody));
@@ -1109,6 +1285,50 @@ public sealed class UserCommandsTests
             Assert.Equal(CommandExposure.None, command.EffectiveExposure);
             Assert.Equal("default", command.ProviderId);
             Assert.Empty(command.IconPath);
+        }
+        finally
+        {
+            if (Directory.Exists(directory))
+            {
+                Directory.Delete(directory, recursive: true);
+            }
+        }
+    }
+
+    [Fact]
+    public void GlobalSettingsStore_DefaultsPersistsEmptyResetsAndRecoversFromCorruption()
+    {
+        var directory = Path.Combine(Path.GetTempPath(), $"CommandPaletteLLM.Tests-{Guid.NewGuid():N}");
+        var filePath = Path.Combine(directory, "settings.json");
+
+        try
+        {
+            var store = new GlobalSettingsStore(filePath);
+            Assert.Equal(
+                GlobalSettings.DefaultAdvancedOutputSystemPrompt,
+                store.Get().AdvancedOutputSystemPrompt);
+            Assert.False(File.Exists(filePath));
+
+            store.Replace(new GlobalSettings
+            {
+                AdvancedOutputSystemPrompt = "Custom instruction",
+            });
+            Assert.Equal(
+                "Custom instruction",
+                new GlobalSettingsStore(filePath).Get().AdvancedOutputSystemPrompt);
+
+            store.Replace(new GlobalSettings { AdvancedOutputSystemPrompt = string.Empty });
+            Assert.Empty(new GlobalSettingsStore(filePath).Get().AdvancedOutputSystemPrompt);
+
+            store.ResetAdvancedOutputSystemPrompt();
+            Assert.Equal(
+                GlobalSettings.DefaultAdvancedOutputSystemPrompt,
+                new GlobalSettingsStore(filePath).Get().AdvancedOutputSystemPrompt);
+
+            File.WriteAllText(filePath, "not json");
+            Assert.Equal(
+                GlobalSettings.DefaultAdvancedOutputSystemPrompt,
+                new GlobalSettingsStore(filePath).Get().AdvancedOutputSystemPrompt);
         }
         finally
         {
@@ -1274,14 +1494,18 @@ public sealed class UserCommandsTests
     {
         public List<string> Prompts { get; } = [];
 
+        public List<string?> SystemPrompts { get; } = [];
+
         public List<string> RequestArguments { get; } = [];
 
         public Task<IReadOnlyList<string>> CompleteAsync(
             string prompt,
+            string? systemPrompt,
             string customRequestArguments,
             CancellationToken cancellationToken)
         {
             Prompts.Add(prompt);
+            SystemPrompts.Add(systemPrompt);
             RequestArguments.Add(customRequestArguments);
             return Task.FromResult<IReadOnlyList<string>>([response]);
         }
@@ -1293,6 +1517,7 @@ public sealed class UserCommandsTests
 
         public Task<IReadOnlyList<string>> CompleteAsync(
             string prompt,
+            string? systemPrompt,
             string customRequestArguments,
             CancellationToken cancellationToken)
         {
@@ -1307,6 +1532,7 @@ public sealed class UserCommandsTests
 
         public async Task<IReadOnlyList<string>> CompleteAsync(
             string prompt,
+            string? systemPrompt,
             string customRequestArguments,
             CancellationToken cancellationToken)
         {
