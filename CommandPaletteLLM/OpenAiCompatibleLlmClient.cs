@@ -1,9 +1,9 @@
 using System;
 using System.Collections.Generic;
+using System.IO;
 using System.Linq;
 using System.Net.Http;
 using System.Net.Http.Headers;
-using System.Net.Http.Json;
 using System.Text.Json;
 using System.Text.Json.Serialization;
 using System.Threading;
@@ -58,7 +58,7 @@ internal sealed class OpenAiCompatibleLlmClient : ILlmClient
 
     public async Task<IReadOnlyList<string>> CompleteAsync(
         string prompt,
-        int variations,
+        string customRequestArguments,
         CancellationToken cancellationToken)
     {
         var settings = _settingsStore.Get(_providerId);
@@ -70,17 +70,7 @@ internal sealed class OpenAiCompatibleLlmClient : ILlmClient
         using var request = new HttpRequestMessage(
             HttpMethod.Post,
             BuildChatCompletionsUri(settings.BaseUrl));
-        request.Content = JsonContent.Create(
-            new ChatCompletionRequest
-            {
-                Model = settings.Model,
-                Variations = variations,
-                Messages =
-                [
-                    new ChatMessage { Role = "user", Content = prompt },
-                ],
-            },
-            CommandPaletteJsonContext.Default.ChatCompletionRequest);
+        request.Content = BuildRequestContent(settings.Model, prompt, customRequestArguments);
 
         if (!string.IsNullOrWhiteSpace(settings.ApiKey))
         {
@@ -159,6 +149,54 @@ internal sealed class OpenAiCompatibleLlmClient : ILlmClient
 
         return new Uri(normalized, UriKind.Absolute);
     }
+
+    private static ByteArrayContent BuildRequestContent(
+        string model,
+        string prompt,
+        string customRequestArguments)
+    {
+        if (!CustomRequestArguments.TryParse(
+            customRequestArguments,
+            out var customArguments,
+            out var error))
+        {
+            throw new LlmRequestException(error ?? "Custom request arguments are invalid.");
+        }
+
+        using (customArguments)
+        using (var stream = new MemoryStream())
+        {
+            using (var writer = new Utf8JsonWriter(stream))
+            {
+                writer.WriteStartObject();
+                writer.WriteString("model", model);
+                writer.WritePropertyName("messages");
+                writer.WriteStartArray();
+                writer.WriteStartObject();
+                writer.WriteString("role", "user");
+                writer.WriteString("content", prompt);
+                writer.WriteEndObject();
+                writer.WriteEndArray();
+
+                if (customArguments is not null)
+                {
+                    foreach (var property in customArguments.RootElement.EnumerateObject())
+                    {
+                        property.WriteTo(writer);
+                    }
+                }
+
+                writer.WriteEndObject();
+            }
+
+            var content = new ByteArrayContent(stream.ToArray());
+            content.Headers.ContentType = new MediaTypeHeaderValue("application/json")
+            {
+                CharSet = "utf-8",
+            };
+            return content;
+        }
+    }
 }
 
 internal sealed class LlmRequestException : Exception
@@ -167,18 +205,6 @@ internal sealed class LlmRequestException : Exception
         : base(message)
     {
     }
-}
-
-internal sealed class ChatCompletionRequest
-{
-    [JsonPropertyName("model")]
-    public string Model { get; set; } = string.Empty;
-
-    [JsonPropertyName("n")]
-    public int Variations { get; set; } = 1;
-
-    [JsonPropertyName("messages")]
-    public List<ChatMessage> Messages { get; set; } = [];
 }
 
 internal sealed class ChatMessage

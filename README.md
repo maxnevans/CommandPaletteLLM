@@ -81,9 +81,9 @@ In the extension settings, enter a command name, select **Add**, and edit the ne
 | --- | --- |
 | Command name | The top-level command and fallback label. Names must be unique. |
 | Prompt format | The exact prompt sent to the provider. Every `{}` is replaced with the user's query. |
+| Custom request arguments | Optional provider-specific JSON body fields, including reasoning controls or `n`. |
 | Advanced output | Interprets a compatible JSON response as rich Command Palette metadata. |
 | Send delay | Wait time after typing before a request is sent. The default is 650 ms. |
-| Response variations | Number of choices requested through the OpenAI `n` field. Dedicated command pages support 1–10 results; fallback results always request one. |
 | LLM provider | Provider used for this command. |
 | Fallback command | Shows the command's response among results on Command Palette's root page. |
 | Custom icon | Copies a supported image into the extension's local storage and uses it for the command. |
@@ -97,6 +97,28 @@ Summarize the following text in one concise sentence:
 ```
 
 Use `{{` and `}}` when the prompt itself needs literal braces. A template may contain `{}` more than once; `{0}` and unmatched braces are rejected.
+
+Custom request arguments must be a JSON object. They are added as top-level fields
+to the `/chat/completions` request body and are not used as a template, so `{}` in
+string values remains literal. For example:
+
+```json
+{
+  "chat_template_kwargs": {
+    "enable_thinking": true,
+    "reasoning_effort": "medium",
+    "preserve_thinking": false
+  },
+  "n": 2
+}
+```
+
+The extension always controls `model` and `messages`; those property names are
+rejected in custom arguments regardless of casing. Other custom fields are sent
+unchanged, including nested objects, arrays, primitives, and `null`. The arguments
+affect only the JSON body, not the provider URL or HTTP headers. If `n` is omitted,
+the provider chooses its default number of responses. Dedicated command pages show
+every returned choice, while fallback results use the first choice.
 
 ## Use a command
 

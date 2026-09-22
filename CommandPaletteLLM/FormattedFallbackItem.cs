@@ -11,6 +11,7 @@ internal sealed partial class FormattedFallbackItem : FallbackCommandItem
 {
     private readonly StableCopyTextCommand _copyCommand;
     private readonly string _promptFormat;
+    private readonly string _customRequestArguments;
     private readonly bool _enableAdvancedOutput;
     private readonly ILlmClient _llmClient;
     private readonly TimeSpan _debounce;
@@ -44,6 +45,7 @@ internal sealed partial class FormattedFallbackItem : FallbackCommandItem
         _copyCommand = Command as StableCopyTextCommand ??
             throw new InvalidOperationException("The fallback copy command was not initialized.");
         _promptFormat = definition.OutputFormat;
+        _customRequestArguments = definition.CustomRequestArguments;
         _enableAdvancedOutput = definition.EnableAdvancedOutput;
         _llmClient = llmClient;
         _debounce = debounce ?? TimeSpan.FromMilliseconds(definition.SendDelayMilliseconds);
@@ -94,7 +96,7 @@ internal sealed partial class FormattedFallbackItem : FallbackCommandItem
             await Task.Delay(_debounce, cancellationToken).ConfigureAwait(false);
             var responses = await _llmClient.CompleteAsync(
                 prompt,
-                variations: 1,
+                customRequestArguments: _customRequestArguments,
                 cancellationToken: cancellationToken)
                 .ConfigureAwait(false);
             PublishResponse(requestVersion, responses[0], cancellationToken);

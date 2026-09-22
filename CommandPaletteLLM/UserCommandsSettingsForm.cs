@@ -146,7 +146,6 @@ internal sealed partial class UserCommandsSettingsForm : FormContent
             Name = ReadText(input, "newName"),
             OutputFormat = "{}",
             SendDelayMilliseconds = 650,
-            ResponseVariations = 1,
             EnableAdvancedOutput = false,
             ProviderId = _providerSettingsStore.Get().Id,
             Exposure = CommandExposure.FallbackCommand,
@@ -305,6 +304,10 @@ internal sealed partial class UserCommandsSettingsForm : FormContent
 
         command.Name = ReadText(input, $"name_{command.Id}", command.Name);
         command.OutputFormat = ReadText(input, $"format_{command.Id}", command.OutputFormat);
+        command.CustomRequestArguments = ReadText(
+            input,
+            $"requestArguments_{command.Id}",
+            command.CustomRequestArguments);
         var advancedOutputKey = $"advancedOutput_{command.Id}";
         if (input[advancedOutputKey] is not null)
         {
@@ -320,17 +323,6 @@ internal sealed partial class UserCommandsSettingsForm : FormContent
             }
 
             command.SendDelayMilliseconds = delay;
-        }
-
-        var variationsKey = $"variations_{command.Id}";
-        if (input[variationsKey] is not null)
-        {
-            if (!TryReadInteger(input, variationsKey, out var variations))
-            {
-                return ShowError($"Command '{command.Name}' must have a whole-number variation count.");
-            }
-
-            command.ResponseVariations = variations;
         }
 
         var providerKey = $"provider_{command.Id}";
@@ -777,7 +769,7 @@ internal sealed partial class UserCommandsSettingsForm : FormContent
                                         new JsonObject
                                         {
                                             ["type"] = "TextBlock",
-                                            ["text"] = $"{GetExposureTitle(command.EffectiveExposure)} · {GetProviderName(command.ProviderId, providers)} · {command.SendDelayMilliseconds} ms · {command.ResponseVariations} variation(s){(command.EnableAdvancedOutput ? " · Advanced output" : string.Empty)}",
+                                            ["text"] = $"{GetExposureTitle(command.EffectiveExposure)} · {GetProviderName(command.ProviderId, providers)} · {command.SendDelayMilliseconds} ms{(string.IsNullOrWhiteSpace(command.CustomRequestArguments) ? string.Empty : " · Custom request arguments")}{(command.EnableAdvancedOutput ? " · Advanced output" : string.Empty)}",
                                             ["isSubtle"] = true,
                                             ["spacing"] = "Small",
                                         },
@@ -832,6 +824,24 @@ internal sealed partial class UserCommandsSettingsForm : FormContent
                             ReadText(draftInputs, $"format_{command.Id}", command.OutputFormat),
                             "Use {} for the search term, {{ for {, and }} for }.",
                             isMultiline: true),
+                        BuildTextInput(
+                            $"requestArguments_{command.Id}",
+                            "Custom request arguments (optional)",
+                            ReadText(
+                                draftInputs,
+                                $"requestArguments_{command.Id}",
+                                command.CustomRequestArguments),
+                            "{\"chat_template_kwargs\":{\"enable_thinking\":true}}",
+                            isRequired: false,
+                            isMultiline: true),
+                        new JsonObject
+                        {
+                            ["type"] = "TextBlock",
+                            ["text"] = "Enter a JSON object with provider-specific request fields, such as reasoning options or n. The protected model and messages fields are not allowed. Values are sent in the JSON body only.",
+                            ["isSubtle"] = true,
+                            ["wrap"] = true,
+                            ["spacing"] = "Small",
+                        },
                         BuildAdvancedOutputInput(
                             $"advancedOutput_{command.Id}",
                             ReadBoolean(
@@ -844,12 +854,6 @@ internal sealed partial class UserCommandsSettingsForm : FormContent
                             ReadInteger(draftInputs, $"delay_{command.Id}", command.SendDelayMilliseconds),
                             0,
                             10_000),
-                        BuildNumberInput(
-                            $"variations_{command.Id}",
-                            "Response variations",
-                            ReadInteger(draftInputs, $"variations_{command.Id}", command.ResponseVariations),
-                            1,
-                            10),
                         BuildChoiceInput(
                             $"provider_{command.Id}",
                             "LLM provider",
@@ -1168,10 +1172,15 @@ internal sealed partial class UserCommandsSettingsForm : FormContent
                 return $"Command '{command.Name}' must have a send delay between 0 and 10000 milliseconds.";
             }
 
-            if (command.ResponseVariations is < 1 or > 10)
+            if (!CustomRequestArguments.TryParse(
+                command.CustomRequestArguments,
+                out var customArguments,
+                out var customArgumentsError))
             {
-                return $"Command '{command.Name}' must request between 1 and 10 response variations.";
+                return $"Command '{command.Name}': {customArgumentsError}";
             }
+
+            customArguments?.Dispose();
         }
 
         return null;
@@ -1235,9 +1244,9 @@ internal sealed partial class UserCommandsSettingsForm : FormContent
     {
         RemoveDraftInput($"name_{commandId}");
         RemoveDraftInput($"format_{commandId}");
+        RemoveDraftInput($"requestArguments_{commandId}");
         RemoveDraftInput($"advancedOutput_{commandId}");
         RemoveDraftInput($"delay_{commandId}");
-        RemoveDraftInput($"variations_{commandId}");
         RemoveDraftInput($"provider_{commandId}");
         RemoveDraftInput($"fallback_{commandId}");
         RemoveDraftInput($"icon_{commandId}");

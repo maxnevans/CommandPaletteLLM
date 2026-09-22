@@ -44,7 +44,7 @@ public sealed class UserCommandsTests
         Assert.Equal("Greeting", definition.Name);
         Assert.Equal("{}", definition.OutputFormat);
         Assert.Equal(650, definition.SendDelayMilliseconds);
-        Assert.Equal(1, definition.ResponseVariations);
+        Assert.Empty(definition.CustomRequestArguments);
         Assert.False(definition.EnableAdvancedOutput);
         Assert.Equal(CommandExposure.FallbackCommand, definition.Exposure);
         Assert.True(definition.EnableGlobalFallback);
@@ -71,14 +71,16 @@ public sealed class UserCommandsTests
         var form = GetSettingsForm(provider);
 
         form.SubmitForm(
-            """{"name_stable-id":"Welcome","format_stable-id":"Welcome, {}.","advancedOutput_stable-id":"true","delay_stable-id":125,"variations_stable-id":3}""",
+            """{"name_stable-id":"Welcome","format_stable-id":"Welcome, {}.","requestArguments_stable-id":"{\"temperature\":0.4}","advancedOutput_stable-id":"true","delay_stable-id":125}""",
             """{"actionId":"save:stable-id"}""");
 
         Assert.Equal(originalCommandId, Assert.Single(provider.TopLevelCommands()).Command.Id);
         Assert.Single(provider.FallbackCommands());
         Assert.Equal("Welcome", Assert.Single(provider.TopLevelCommands()).Title);
         Assert.Equal(125, Assert.Single(store.GetCommands()).SendDelayMilliseconds);
-        Assert.Equal(3, Assert.Single(store.GetCommands()).ResponseVariations);
+        Assert.Equal(
+            """{"temperature":0.4}""",
+            Assert.Single(store.GetCommands()).CustomRequestArguments);
         Assert.True(Assert.Single(store.GetCommands()).EnableAdvancedOutput);
     }
 
@@ -143,7 +145,8 @@ public sealed class UserCommandsTests
         Assert.Contains("Delete command", form.TemplateJson, StringComparison.Ordinal);
         Assert.Contains("Cancel editing", form.TemplateJson, StringComparison.Ordinal);
         Assert.Contains("Send delay (milliseconds)", form.TemplateJson, StringComparison.Ordinal);
-        Assert.Contains("Response variations", form.TemplateJson, StringComparison.Ordinal);
+        Assert.Contains("Custom request arguments (optional)", form.TemplateJson, StringComparison.Ordinal);
+        Assert.DoesNotContain("Response variations", form.TemplateJson, StringComparison.Ordinal);
         Assert.Contains("Enable advanced output format", form.TemplateJson, StringComparison.Ordinal);
         Assert.Contains("\"type\":\"RichTextBlock\"", form.TemplateJson, StringComparison.Ordinal);
         Assert.Contains("\"type\":\"Action.ToggleVisibility\"", form.TemplateJson, StringComparison.Ordinal);
@@ -154,6 +157,7 @@ public sealed class UserCommandsTests
         Assert.Contains("Invalid formatted output automatically uses the normal output rules", form.TemplateJson, StringComparison.Ordinal);
         Assert.Contains("Full content copied when selected", form.TemplateJson, StringComparison.Ordinal);
         Assert.Contains("\"id\":\"format_stable-id\",\"label\":\"Prompt format\"", form.TemplateJson, StringComparison.Ordinal);
+        Assert.Contains("\"id\":\"requestArguments_stable-id\"", form.TemplateJson, StringComparison.Ordinal);
         Assert.Contains("\"isMultiline\":true", form.TemplateJson, StringComparison.Ordinal);
         Assert.Contains("\"id\":\"name_stable-id\",\"label\":\"Command name\",\"value\":\"Greeting\",\"placeholder\":\"\",\"isRequired\":true,\"isMultiline\":false", form.TemplateJson, StringComparison.Ordinal);
         Assert.Contains("Enable as fallback command", form.TemplateJson, StringComparison.Ordinal);
@@ -164,6 +168,29 @@ public sealed class UserCommandsTests
         Assert.Contains("Custom icon file", form.TemplateJson, StringComparison.Ordinal);
         Assert.Contains("\"type\":\"Input.Number\"", form.TemplateJson, StringComparison.Ordinal);
         Assert.Contains("\"id\":\"add\"", form.TemplateJson, StringComparison.Ordinal);
+    }
+
+    [Theory]
+    [InlineData("not json", "valid JSON")]
+    [InlineData("[]", "JSON object")]
+    [InlineData("{\"model\":\"other\"}", "protected")]
+    [InlineData("{\"MESSAGES\":[]}", "protected")]
+    public void Settings_RejectsInvalidCustomRequestArguments(string arguments, string expectedError)
+    {
+        var provider = CreateProvider(out var store);
+        AddCommand(store, "Greeting", "Hello {}!", "stable-id");
+        provider = new CommandPaletteLLMCommandsProvider(store);
+        var form = GetSettingsForm(provider);
+        var payload = JsonSerializer.Serialize(new Dictionary<string, string>
+        {
+            ["requestArguments_stable-id"] = arguments,
+        });
+
+        form.SubmitForm(payload, """{"actionId":"save:stable-id"}""");
+
+        Assert.Empty(Assert.Single(store.GetCommands()).CustomRequestArguments);
+        Assert.Contains(expectedError, form.TemplateJson, StringComparison.Ordinal);
+        Assert.Contains(JsonEncodedText.Encode(arguments).ToString(), form.TemplateJson, StringComparison.Ordinal);
     }
 
     [Fact]
@@ -382,6 +409,7 @@ public sealed class UserCommandsTests
             Id = "greeting",
             Name = "Greeting",
             OutputFormat = "Hello {}!",
+            CustomRequestArguments = """{"n":2}""",
         }, client, TimeSpan.Zero);
 
         page.SearchText = "Maxim";
@@ -393,6 +421,7 @@ public sealed class UserCommandsTests
         Assert.False(page.ShowDetails);
         Assert.Null(item.Details);
         Assert.Equal("Hello Maxim!", Assert.Single(client.Prompts));
+        Assert.Equal("""{"n":2}""", Assert.Single(client.RequestArguments));
         Assert.False(page.IsLoading);
     }
 
@@ -491,7 +520,7 @@ public sealed class UserCommandsTests
             Name = "Structured",
             OutputFormat = "{}",
             EnableAdvancedOutput = true,
-            ResponseVariations = 2,
+            CustomRequestArguments = """{"n":2}""",
         }, client, TimeSpan.Zero);
 
         page.SearchText = "Text";
@@ -504,7 +533,7 @@ public sealed class UserCommandsTests
                 Assert.Equal("Second", item.Title);
                 Assert.Equal("Alternative", item.Subtitle);
             });
-        Assert.Equal(2, client.RequestedVariations);
+        Assert.Equal("""{"n":2}""", client.RequestedCustomRequestArguments);
     }
 
     [Theory]
@@ -720,7 +749,7 @@ public sealed class UserCommandsTests
     }
 
     [Fact]
-    public void FormattedPage_ReturnsConfiguredNumberOfVariations()
+    public void FormattedPage_ForwardsCustomRequestArguments()
     {
         var client = new RecordingLlmClient("translation");
         var page = new FormattedCommandPage(new UserCommandDefinition
@@ -729,13 +758,13 @@ public sealed class UserCommandsTests
             Name = "Translate",
             OutputFormat = "Translate: {}",
             SendDelayMilliseconds = 0,
-            ResponseVariations = 3,
+            CustomRequestArguments = """{"temperature":0.2}""",
         }, client, TimeSpan.Zero);
 
         page.SearchText = "hello";
 
-        Assert.Equal(3, page.GetItems().Length);
-        Assert.Equal(3, Assert.Single(client.VariationCounts));
+        Assert.Single(page.GetItems());
+        Assert.Equal("""{"temperature":0.2}""", Assert.Single(client.RequestArguments));
     }
 
     [Fact]
@@ -839,7 +868,7 @@ public sealed class UserCommandsTests
             """{"choices":[{"message":{"role":"assistant","content":"  First answer.  "}},{"message":{"role":"assistant","content":"Second answer."}}]}""");
         var client = new OpenAiCompatibleLlmClient(store, new HttpClient(handler));
 
-        var responses = await client.CompleteAsync("Explain this", 2, CancellationToken.None);
+        var responses = await client.CompleteAsync("Explain this", string.Empty, CancellationToken.None);
 
         Assert.Equal(["First answer.", "Second answer."], responses);
         Assert.Equal("http://127.0.0.1:8080/v1/chat/completions", handler.RequestUri?.ToString());
@@ -847,10 +876,76 @@ public sealed class UserCommandsTests
         Assert.Equal("test-key", handler.AuthorizationParameter);
         using var requestJson = JsonDocument.Parse(Assert.IsType<string>(handler.RequestBody));
         Assert.Equal("local-model", requestJson.RootElement.GetProperty("model").GetString());
-        Assert.Equal(2, requestJson.RootElement.GetProperty("n").GetInt32());
+        Assert.False(requestJson.RootElement.TryGetProperty("n", out _));
         Assert.Equal(
             "Explain this",
             requestJson.RootElement.GetProperty("messages")[0].GetProperty("content").GetString());
+    }
+
+    [Fact]
+    public async Task OpenAiClient_AddsCustomRequestArgumentsWithoutChangingCoreFields()
+    {
+        var store = new LlmProviderSettingsStore(filePath: null);
+        store.Replace(new LlmProviderSettings
+        {
+            BaseUrl = "http://127.0.0.1:8080/v1",
+            Model = "local-model",
+        });
+        var handler = new RecordingHttpMessageHandler(
+            """{"choices":[{"message":{"content":"answer"}}]}""");
+        var client = new OpenAiCompatibleLlmClient(store, new HttpClient(handler));
+        const string arguments = """
+            {
+              "n": 2,
+              "temperature": null,
+              "stop": ["END"],
+              "chat_template_kwargs": {
+                "enable_thinking": true,
+                "reasoning_effort": "medium",
+                "preserve_thinking": false
+              }
+            }
+            """;
+
+        await client.CompleteAsync("Prompt", arguments, CancellationToken.None);
+
+        using var requestJson = JsonDocument.Parse(Assert.IsType<string>(handler.RequestBody));
+        var root = requestJson.RootElement;
+        Assert.Equal("local-model", root.GetProperty("model").GetString());
+        Assert.Equal("Prompt", root.GetProperty("messages")[0].GetProperty("content").GetString());
+        Assert.Equal(2, root.GetProperty("n").GetInt32());
+        Assert.Equal(JsonValueKind.Null, root.GetProperty("temperature").ValueKind);
+        Assert.Equal("END", root.GetProperty("stop")[0].GetString());
+        Assert.True(root.GetProperty("chat_template_kwargs").GetProperty("enable_thinking").GetBoolean());
+        Assert.Equal(
+            "medium",
+            root.GetProperty("chat_template_kwargs").GetProperty("reasoning_effort").GetString());
+        Assert.False(root.GetProperty("chat_template_kwargs").GetProperty("preserve_thinking").GetBoolean());
+    }
+
+    [Theory]
+    [InlineData("not json")]
+    [InlineData("[]")]
+    [InlineData("{\"model\":\"other\"}")]
+    [InlineData("{\"Model\":\"other\"}")]
+    [InlineData("{\"messages\":[]}")]
+    [InlineData("{\"MESSAGES\":[]}")]
+    public async Task OpenAiClient_RejectsInvalidCustomRequestArguments(string arguments)
+    {
+        var store = new LlmProviderSettingsStore(filePath: null);
+        store.Replace(new LlmProviderSettings
+        {
+            BaseUrl = "http://127.0.0.1:8080/v1",
+            Model = "local-model",
+        });
+        var handler = new RecordingHttpMessageHandler("{}");
+        var client = new OpenAiCompatibleLlmClient(store, new HttpClient(handler));
+
+        var exception = await Assert.ThrowsAsync<LlmRequestException>(() =>
+            client.CompleteAsync("Prompt", arguments, CancellationToken.None));
+
+        Assert.Contains("Custom request arguments", exception.Message, StringComparison.Ordinal);
+        Assert.Null(handler.RequestBody);
     }
 
     [Fact]
@@ -881,7 +976,7 @@ public sealed class UserCommandsTests
             "second",
             new HttpClient(handler));
 
-        await client.CompleteAsync("Prompt", 1, CancellationToken.None);
+        await client.CompleteAsync("Prompt", string.Empty, CancellationToken.None);
 
         Assert.Equal("https://second.example/v1/chat/completions", handler.RequestUri?.ToString());
         using var requestJson = JsonDocument.Parse(Assert.IsType<string>(handler.RequestBody));
@@ -996,7 +1091,8 @@ public sealed class UserCommandsTests
                 "persistent-id",
                 enableAdvancedOutput: true,
                 enableGlobalFallback: false,
-                exposure: CommandExposure.Unspecified);
+                exposure: CommandExposure.Unspecified,
+                customRequestArguments: """{"chat_template_kwargs":{"enable_thinking":true}}""");
 
             var reloaded = new UserCommandStore(filePath);
 
@@ -1005,7 +1101,9 @@ public sealed class UserCommandsTests
             Assert.Equal("Greeting", command.Name);
             Assert.Equal("Hello {}!", command.OutputFormat);
             Assert.Equal(650, command.SendDelayMilliseconds);
-            Assert.Equal(1, command.ResponseVariations);
+            Assert.Equal(
+                """{"chat_template_kwargs":{"enable_thinking":true}}""",
+                command.CustomRequestArguments);
             Assert.True(command.EnableAdvancedOutput);
             Assert.False(command.EnableGlobalFallback);
             Assert.Equal(CommandExposure.None, command.EffectiveExposure);
@@ -1032,9 +1130,10 @@ public sealed class UserCommandsTests
             Directory.CreateDirectory(directory);
             File.WriteAllText(
                 filePath,
-                """[{"Id":"legacy","Name":"Legacy","OutputFormat":"{}","SendDelayMilliseconds":650,"ResponseVariations":1}]""");
+                """[{"Id":"legacy","Name":"Legacy","OutputFormat":"{}","SendDelayMilliseconds":650}]""");
 
-            var command = Assert.Single(new UserCommandStore(filePath).GetCommands());
+            var store = new UserCommandStore(filePath);
+            var command = Assert.Single(store.GetCommands());
 
             Assert.True(command.EnableGlobalFallback);
             Assert.False(command.EnableAdvancedOutput);
@@ -1141,7 +1240,8 @@ public sealed class UserCommandsTests
         int sendDelayMilliseconds = 650,
         bool enableAdvancedOutput = false,
         bool enableGlobalFallback = true,
-        CommandExposure exposure = CommandExposure.FallbackCommand)
+        CommandExposure exposure = CommandExposure.FallbackCommand,
+        string customRequestArguments = "")
     {
         var commands = store.GetCommands().Select(command => command.Clone()).ToList();
         commands.Add(new UserCommandDefinition
@@ -1150,7 +1250,7 @@ public sealed class UserCommandsTests
             Name = name,
             OutputFormat = outputFormat,
             SendDelayMilliseconds = sendDelayMilliseconds,
-            ResponseVariations = 1,
+            CustomRequestArguments = customRequestArguments,
             EnableAdvancedOutput = enableAdvancedOutput,
             Exposure = exposure,
             EnableGlobalFallback = exposure == CommandExposure.Unspecified
@@ -1174,32 +1274,29 @@ public sealed class UserCommandsTests
     {
         public List<string> Prompts { get; } = [];
 
-        public List<int> VariationCounts { get; } = [];
+        public List<string> RequestArguments { get; } = [];
 
         public Task<IReadOnlyList<string>> CompleteAsync(
             string prompt,
-            int variations,
+            string customRequestArguments,
             CancellationToken cancellationToken)
         {
             Prompts.Add(prompt);
-            VariationCounts.Add(variations);
-            return Task.FromResult<IReadOnlyList<string>>(
-                Enumerable.Range(1, variations)
-                    .Select(index => index == 1 ? response : $"{response} {index}")
-                    .ToArray());
+            RequestArguments.Add(customRequestArguments);
+            return Task.FromResult<IReadOnlyList<string>>([response]);
         }
     }
 
     private sealed class SequenceLlmClient(params string[] responses) : ILlmClient
     {
-        public int RequestedVariations { get; private set; }
+        public string RequestedCustomRequestArguments { get; private set; } = string.Empty;
 
         public Task<IReadOnlyList<string>> CompleteAsync(
             string prompt,
-            int variations,
+            string customRequestArguments,
             CancellationToken cancellationToken)
         {
-            RequestedVariations = variations;
+            RequestedCustomRequestArguments = customRequestArguments;
             return Task.FromResult<IReadOnlyList<string>>(responses);
         }
     }
@@ -1210,7 +1307,7 @@ public sealed class UserCommandsTests
 
         public async Task<IReadOnlyList<string>> CompleteAsync(
             string prompt,
-            int variations,
+            string customRequestArguments,
             CancellationToken cancellationToken)
         {
             var request = new PendingRequest(prompt, cancellationToken);

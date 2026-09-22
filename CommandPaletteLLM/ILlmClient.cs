@@ -8,6 +8,6 @@ internal interface ILlmClient
 {
     Task<IReadOnlyList<string>> CompleteAsync(
         string prompt,
-        int variations,
+        string customRequestArguments,
         CancellationToken cancellationToken);
 }

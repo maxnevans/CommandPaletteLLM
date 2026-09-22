@@ -112,6 +112,5 @@ internal sealed class UserCommandStore
             CommandExposure.FallbackCommand or
             CommandExposure.GlobalResult) &&
         command.SendDelayMilliseconds is >= 0 and <= 10_000 &&
-        command.ResponseVariations is >= 1 and <= 10 &&
         OutputFormatter.TryFormat(command.OutputFormat, string.Empty, out _, out _);
 }

@@ -20,7 +20,7 @@ internal sealed class UserCommandDefinition
 
     public int SendDelayMilliseconds { get; set; } = 650;
 
-    public int ResponseVariations { get; set; } = 1;
+    public string CustomRequestArguments { get; set; } = string.Empty;
 
     public bool EnableAdvancedOutput { get; set; }
 
@@ -44,7 +44,7 @@ internal sealed class UserCommandDefinition
         Name = Name,
         OutputFormat = OutputFormat,
         SendDelayMilliseconds = SendDelayMilliseconds,
-        ResponseVariations = ResponseVariations,
+        CustomRequestArguments = CustomRequestArguments,
         EnableAdvancedOutput = EnableAdvancedOutput,
         ProviderId = ProviderId,
         Exposure = Exposure,

@@ -16,7 +16,7 @@ internal sealed partial class FormattedCommandPage : DynamicListPage, IDisposabl
     private const int CompactResultCharacterLimit = 120;
 
     private readonly string _promptFormat;
-    private readonly int _responseVariations;
+    private readonly string _customRequestArguments;
     private readonly bool _enableAdvancedOutput;
     private readonly ILlmClient _llmClient;
     private readonly TimeSpan _debounce;
@@ -51,7 +51,7 @@ internal sealed partial class FormattedCommandPage : DynamicListPage, IDisposabl
         TimeSpan? statusUpdateInterval = null)
     {
         _promptFormat = definition.OutputFormat;
-        _responseVariations = definition.ResponseVariations;
+        _customRequestArguments = definition.CustomRequestArguments;
         _enableAdvancedOutput = definition.EnableAdvancedOutput;
         _llmClient = llmClient;
         _debounce = debounce ?? TimeSpan.FromMilliseconds(definition.SendDelayMilliseconds);
@@ -211,7 +211,7 @@ internal sealed partial class FormattedCommandPage : DynamicListPage, IDisposabl
             _requestInFlight = true;
             var responses = await _llmClient.CompleteAsync(
                 prompt,
-                _responseVariations,
+                _customRequestArguments,
                 cancellationToken).ConfigureAwait(false);
             Publish(
                 requestVersion,
