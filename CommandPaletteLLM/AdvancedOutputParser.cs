@@ -6,9 +6,11 @@ namespace CommandPaletteLLM;
 
 internal static class AdvancedOutputParser
 {
-    public static bool TryParse(string response, out AdvancedOutput output)
+    public static bool TryParse(
+        string response,
+        out IReadOnlyList<AdvancedOutputEntry> entries)
     {
-        output = new AdvancedOutput(string.Empty, string.Empty, string.Empty, string.Empty, []);
+        entries = [];
 
         try
         {
@@ -19,23 +21,64 @@ internal static class AdvancedOutputParser
             }
 
             using var document = JsonDocument.Parse(json);
-            if (document.RootElement.ValueKind != JsonValueKind.Object ||
-                !TryReadString(document.RootElement, "title", out var title) ||
-                !TryReadString(document.RootElement, "subtitle", out var subtitle) ||
-                !TryReadString(document.RootElement, "details", out var details) ||
-                !TryReadString(document.RootElement, "section", out var section) ||
-                !TryReadTags(document.RootElement, out var tags))
+            if (document.RootElement.ValueKind == JsonValueKind.Object)
+            {
+                if (!TryParseObject(document.RootElement, out var output, out _))
+                {
+                    return false;
+                }
+
+                entries = [AdvancedOutputEntry.Valid(output)];
+                return true;
+            }
+
+            if (document.RootElement.ValueKind != JsonValueKind.Array)
             {
                 return false;
             }
 
-            output = new AdvancedOutput(title, subtitle, details, section, tags);
+            var parsedEntries = new List<AdvancedOutputEntry>();
+            foreach (var element in document.RootElement.EnumerateArray())
+            {
+                parsedEntries.Add(TryParseObject(element, out var output, out var errorTitle)
+                    ? AdvancedOutputEntry.Valid(output)
+                    : AdvancedOutputEntry.Invalid(errorTitle, element.GetRawText()));
+            }
+
+            entries = parsedEntries;
             return true;
         }
         catch (JsonException)
         {
             return false;
         }
+    }
+
+    private static bool TryParseObject(
+        JsonElement root,
+        out AdvancedOutput output,
+        out string errorTitle)
+    {
+        output = new AdvancedOutput(string.Empty, string.Empty, string.Empty, string.Empty, []);
+        errorTitle = string.Empty;
+
+        if (root.ValueKind != JsonValueKind.Object)
+        {
+            errorTitle = "Invalid variation: expected an object";
+            return false;
+        }
+
+        if (!TryReadString(root, "title", out var title, out errorTitle) ||
+            !TryReadString(root, "subtitle", out var subtitle, out errorTitle) ||
+            !TryReadString(root, "details", out var details, out errorTitle) ||
+            !TryReadString(root, "section", out var section, out errorTitle) ||
+            !TryReadTags(root, out var tags, out errorTitle))
+        {
+            return false;
+        }
+
+        output = new AdvancedOutput(title, subtitle, details, section, tags);
+        return true;
     }
 
     private static string? UnwrapCodeFence(string response)
@@ -73,9 +116,11 @@ internal static class AdvancedOutputParser
     private static bool TryReadString(
         JsonElement root,
         string propertyName,
-        out string value)
+        out string value,
+        out string errorTitle)
     {
         value = string.Empty;
+        errorTitle = string.Empty;
         if (!root.TryGetProperty(propertyName, out var property))
         {
             return true;
@@ -83,6 +128,7 @@ internal static class AdvancedOutputParser
 
         if (property.ValueKind != JsonValueKind.String)
         {
+            errorTitle = $"Invalid variation: \"{propertyName}\" must be a string";
             return false;
         }
 
@@ -90,9 +136,13 @@ internal static class AdvancedOutputParser
         return true;
     }
 
-    private static bool TryReadTags(JsonElement root, out IReadOnlyList<string> tags)
+    private static bool TryReadTags(
+        JsonElement root,
+        out IReadOnlyList<string> tags,
+        out string errorTitle)
     {
         tags = [];
+        errorTitle = string.Empty;
         if (!root.TryGetProperty("tags", out var property))
         {
             return true;
@@ -100,6 +150,7 @@ internal static class AdvancedOutputParser
 
         if (property.ValueKind != JsonValueKind.Array)
         {
+            errorTitle = "Invalid variation: \"tags\" must be an array";
             return false;
         }
 
@@ -108,6 +159,7 @@ internal static class AdvancedOutputParser
         {
             if (tag.ValueKind != JsonValueKind.String)
             {
+                errorTitle = "Invalid variation: \"tags\" must contain only strings";
                 return false;
             }
 

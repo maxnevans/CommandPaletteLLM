@@ -63,6 +63,15 @@ internal sealed class GlobalSettingsStore
                 return new GlobalSettings();
             }
 
+            if (string.Equals(
+                settings.AdvancedOutputSystemPrompt,
+                GlobalSettings.LegacyAdvancedOutputSystemPrompt,
+                StringComparison.Ordinal))
+            {
+                settings.AdvancedOutputSystemPrompt =
+                    GlobalSettings.DefaultAdvancedOutputSystemPrompt;
+            }
+
             return settings;
         }
         catch (IOException)

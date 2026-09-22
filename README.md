@@ -118,7 +118,8 @@ rejected in custom arguments regardless of casing. Other custom fields are sent
 unchanged, including nested objects, arrays, primitives, and `null`. The arguments
 affect only the JSON body, not the provider URL or HTTP headers. If `n` is omitted,
 the provider chooses its default number of responses. Dedicated command pages show
-every returned choice, while fallback results use the first choice.
+every returned choice, while fallback results use the first choice. This is independent
+of advanced-output arrays requested through the user's natural-language prompt.
 
 ## Use a command
 
@@ -133,7 +134,7 @@ If the endpoint is offline, the command page displays its connection state and r
 
 ## Advanced output
 
-Advanced output lets the model control how a result appears in Command Palette. Enable it for a command and the extension automatically sends the global advanced output system prompt before the command prompt. The expected response is a JSON object using these case-sensitive fields:
+Advanced output lets the model control how results appear in Command Palette. Enable it for a command and the extension automatically sends the global advanced output system prompt before the command prompt. The expected response is either one JSON result object or, when the user's prompt asks for variations, an ordered array of result objects. A result object uses these case-sensitive fields:
 
 ```json
 {
@@ -145,17 +146,26 @@ Advanced output lets the model control how a result appears in Command Palette. 
 }
 ```
 
-`title`, `subtitle`, `details`, and `section` must be strings; `tags` must be an array of strings. Extra properties are ignored. Plain JSON and a single unlabelled or `json` Markdown code fence are accepted.
+`title`, `subtitle`, `details`, and `section` must be strings; `tags` must be an array of strings. Extra properties are ignored. Plain JSON and a single unlabelled or `json` Markdown code fence are accepted. For example, a request for alternatives may return:
+
+```json
+[
+  { "title": "First variation" },
+  { "title": "Second variation", "details": "Full second result" }
+]
+```
+
+Dedicated command pages display every array element in order and flatten arrays from multiple provider choices in choice order. Invalid array elements remain in place as error results whose details and copy action contain the invalid JSON. An empty array produces no results. Root-page fallback commands skip invalid elements and display only the first valid object from the first provider choice; they remain hidden if none exists.
 
 The system prompt is shared by every command. Edit it from the collapsed **Advanced output system prompt** card in the **Global** section of extension settings, or reset it to the supplied default. Saving an empty prompt disables automatic system-message injection while leaving advanced response parsing enabled.
 
 The supplied default is:
 
 ```text
-Return only one JSON object, with no Markdown or surrounding text. Use lowercase, case-sensitive fields: "title" (required concise result), "subtitle" (optional supporting text), "details" (optional full content), "section" (optional group name), and "tags" (optional array of strings). Omit unused optional fields.
+Return only JSON, with no Markdown or surrounding text. A result object uses lowercase, case-sensitive fields: "title" (required concise result), "subtitle" (optional supporting text), "details" (optional full content), "section" (optional group name), and "tags" (optional array of strings). Omit unused optional fields. If the user's prompt asks in natural language for variations, alternatives, options, or multiple versions, return a JSON array containing one result object per variation; an empty array is allowed. Otherwise, return one result object. Choose the array form only from the user's wording, not request parameters such as "n".
 ```
 
-If parsing fails, the response is still shown using the normal text-result layout instead of being discarded.
+If a standalone object, the JSON document, or its root is invalid, the response is still shown using the normal text-result layout instead of being discarded.
 
 ## Local data and privacy
 

@@ -224,11 +224,11 @@ public sealed class UserCommandsTests
         Assert.Contains("Enable advanced output format", form.TemplateJson, StringComparison.Ordinal);
         Assert.Contains("\"type\":\"RichTextBlock\"", form.TemplateJson, StringComparison.Ordinal);
         Assert.Contains("\"type\":\"Action.ToggleVisibility\"", form.TemplateJson, StringComparison.Ordinal);
-        Assert.Contains("JSON object with optional title, subtitle, details, section, and tags fields", form.TemplateJson, StringComparison.Ordinal);
+        Assert.Contains("JSON result object or ordered array with optional title, subtitle, details, section, and tags fields", form.TemplateJson, StringComparison.Ordinal);
         Assert.Contains("\"id\":\"advancedOutput_stable-id_help\",\"isVisible\":false", form.TemplateJson, StringComparison.Ordinal);
         Assert.DoesNotContain("\"type\":\"Action.ShowCard\"", form.TemplateJson, StringComparison.Ordinal);
         Assert.Contains("All five fields are optional", form.TemplateJson, StringComparison.Ordinal);
-        Assert.Contains("Invalid formatted output automatically uses the normal output rules", form.TemplateJson, StringComparison.Ordinal);
+        Assert.Contains("Invalid array elements appear as error results", form.TemplateJson, StringComparison.Ordinal);
         Assert.Contains("Full content copied when selected", form.TemplateJson, StringComparison.Ordinal);
         Assert.Contains("\"id\":\"format_stable-id\",\"label\":\"Prompt format\"", form.TemplateJson, StringComparison.Ordinal);
         Assert.Contains("\"id\":\"requestArguments_stable-id\"", form.TemplateJson, StringComparison.Ordinal);
@@ -648,6 +648,119 @@ public sealed class UserCommandsTests
     }
 
     [Fact]
+    public void FormattedPage_PreservesAdvancedOutputArrayOrderAndShowsInvalidElements()
+    {
+        const string response = """
+            [
+              {"title":"First"},
+              42,
+              {"title":1},
+              {"tags":"tag"},
+              {"tags":["valid",1]},
+              {"title":"Last","details":"Last details"}
+            ]
+            """;
+        var page = new FormattedCommandPage(new UserCommandDefinition
+        {
+            Id = "structured",
+            Name = "Structured",
+            OutputFormat = "{}",
+            EnableAdvancedOutput = true,
+        }, new RecordingLlmClient(response), TimeSpan.Zero);
+
+        page.SearchText = "Text";
+
+        Assert.Collection(
+            page.GetItems(),
+            item => Assert.Equal("First", item.Title),
+            item => AssertAdvancedOutputError(
+                item,
+                "Invalid variation: expected an object",
+                "42"),
+            item => AssertAdvancedOutputError(
+                item,
+                "Invalid variation: \"title\" must be a string",
+                "{\"title\":1}"),
+            item => AssertAdvancedOutputError(
+                item,
+                "Invalid variation: \"tags\" must be an array",
+                "{\"tags\":\"tag\"}"),
+            item => AssertAdvancedOutputError(
+                item,
+                "Invalid variation: \"tags\" must contain only strings",
+                "{\"tags\":[\"valid\",1]}"),
+            item =>
+            {
+                Assert.Equal("Last", item.Title);
+                Assert.Equal("Last details", item.Details?.Body);
+            });
+        Assert.True(page.ShowDetails);
+    }
+
+    [Fact]
+    public void FormattedPage_AcceptsFencedEmptyAdvancedOutputArray()
+    {
+        const string response = """
+            ```json
+            []
+            ```
+            """;
+        var page = new FormattedCommandPage(new UserCommandDefinition
+        {
+            Id = "structured",
+            Name = "Structured",
+            OutputFormat = "{}",
+            EnableAdvancedOutput = true,
+        }, new RecordingLlmClient(response), TimeSpan.Zero);
+
+        page.SearchText = "Text";
+
+        Assert.Empty(page.GetItems());
+        Assert.False(page.ShowDetails);
+    }
+
+    [Fact]
+    public void FormattedPage_FlattensAdvancedOutputArraysAcrossProviderChoices()
+    {
+        var client = new SequenceLlmClient(
+            """[{"title":"First"},{"title":"Second"}]""",
+            """[{"title":"Third"}]""");
+        var page = new FormattedCommandPage(new UserCommandDefinition
+        {
+            Id = "structured",
+            Name = "Structured",
+            OutputFormat = "{}",
+            EnableAdvancedOutput = true,
+            CustomRequestArguments = """{"n":2}""",
+        }, client, TimeSpan.Zero);
+
+        page.SearchText = "Text";
+
+        Assert.Equal(
+            ["First", "Second", "Third"],
+            page.GetItems().Select(item => item.Title));
+        Assert.Equal("""{"n":2}""", client.RequestedCustomRequestArguments);
+    }
+
+    [Fact]
+    public void FormattedPage_AdvancedOutputDisabledTreatsArrayAsPlainText()
+    {
+        const string response = """[{"title":"First"},{"title":"Second"}]""";
+        var page = new FormattedCommandPage(new UserCommandDefinition
+        {
+            Id = "plain",
+            Name = "Plain",
+            OutputFormat = "{}",
+        }, new RecordingLlmClient(response), TimeSpan.Zero);
+
+        page.SearchText = "Text";
+
+        var item = Assert.Single(page.GetItems());
+        Assert.Equal(response, item.Title);
+        Assert.Equal(response, Assert.IsType<CopyTextCommand>(item.Command).Text);
+    }
+
+    [Fact]
     public void FormattedPage_ParsesEveryAdvancedOutputVariationIndependently()
     {
         var client = new SequenceLlmClient(
@@ -677,7 +790,7 @@ public sealed class UserCommandsTests
 
     [Theory]
     [InlineData("not json")]
-    [InlineData("[]")]
+    [InlineData("42")]
     [InlineData("{\"title\":1}")]
     [InlineData("{\"subtitle\":null}")]
     [InlineData("{\"tags\":\"tag\"}")]
@@ -748,6 +861,46 @@ public sealed class UserCommandsTests
         Assert.Equal(
             "Copy this",
             Assert.IsType<StableCopyTextCommand>(fallback.Command).Text);
+    }
+
+    [Fact]
+    public void FormattedFallback_UsesFirstValidAdvancedOutputArrayElement()
+    {
+        const string response = """[false,{"title":1},{"title":"Result"},{"title":"Ignored"}]""";
+        var fallback = new FormattedFallbackItem(new UserCommandDefinition
+        {
+            Id = "structured",
+            Name = "Structured",
+            OutputFormat = "{}",
+            EnableAdvancedOutput = true,
+        }, new RecordingLlmClient(response), TimeSpan.Zero);
+
+        fallback.FallbackHandler!.UpdateQuery("Text");
+
+        Assert.Equal("Result", fallback.Title);
+        Assert.Equal(
+            "Result",
+            Assert.IsType<StableCopyTextCommand>(fallback.Command).Text);
+    }
+
+    [Theory]
+    [InlineData("[]")]
+    [InlineData("[false,{\"title\":1}]")]
+    public void FormattedFallback_HidesAdvancedOutputArrayWithoutValidObjects(string response)
+    {
+        var fallback = new FormattedFallbackItem(new UserCommandDefinition
+        {
+            Id = "structured",
+            Name = "Structured",
+            OutputFormat = "{}",
+            EnableAdvancedOutput = true,
+        }, new RecordingLlmClient(response), TimeSpan.Zero);
+
+        fallback.FallbackHandler!.UpdateQuery("Text");
+
+        Assert.Empty(fallback.Title);
+        Assert.Empty(fallback.Subtitle);
+        Assert.Empty(Assert.IsType<StableCopyTextCommand>(fallback.Command).Text);
     }
 
     [Fact]
@@ -1311,6 +1464,14 @@ public sealed class UserCommandsTests
 
             store.Replace(new GlobalSettings
             {
+                AdvancedOutputSystemPrompt = GlobalSettings.LegacyAdvancedOutputSystemPrompt,
+            });
+            Assert.Equal(
+                GlobalSettings.DefaultAdvancedOutputSystemPrompt,
+                new GlobalSettingsStore(filePath).Get().AdvancedOutputSystemPrompt);
+
+            store.Replace(new GlobalSettings
+            {
                 AdvancedOutputSystemPrompt = "Custom instruction",
             });
             Assert.Equal(
@@ -1488,6 +1649,19 @@ public sealed class UserCommandsTests
         }
 
         Assert.True(condition());
+    }
+
+    private static void AssertAdvancedOutputError(
+        Microsoft.CommandPalette.Extensions.IListItem item,
+        string title,
+        string rawContent)
+    {
+        Assert.Equal(title, item.Title);
+        Assert.Equal(rawContent, item.Details?.Body);
+        Assert.Equal(title, item.Details?.Title);
+        Assert.Equal(ContentSize.Large, Assert.IsType<Details>(item.Details).Size);
+        Assert.Equal(rawContent, Assert.IsType<CopyTextCommand>(item.Command).Text);
+        Assert.Equal(rawContent, item.TextToSuggest);
     }
 
     private sealed class RecordingLlmClient(string response) : ILlmClient

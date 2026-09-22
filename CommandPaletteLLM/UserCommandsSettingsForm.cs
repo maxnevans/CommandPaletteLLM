@@ -1228,7 +1228,7 @@ internal sealed partial class UserCommandsSettingsForm : FormContent
                                             ["selectAction"] = new JsonObject
                                             {
                                                 ["type"] = "Action.ToggleVisibility",
-                                                ["tooltip"] = "JSON object with optional title, subtitle, details, section, and tags fields. Click for details.",
+                                                ["tooltip"] = "JSON result object or ordered array with optional title, subtitle, details, section, and tags fields. Click for details.",
                                                 ["targetElements"] = new JsonArray(helpId),
                                             },
                                         },
@@ -1271,7 +1271,7 @@ internal sealed partial class UserCommandsSettingsForm : FormContent
                 new JsonObject
                 {
                     ["type"] = "TextBlock",
-                    ["text"] = "The response must be a JSON object. All five fields are optional. If present, title, subtitle, details, and section must be strings; tags must be an array of strings. Property names are lowercase and case-sensitive. Extra properties are ignored.",
+                    ["text"] = "The response must be one JSON result object, or an ordered array of result objects when the prompt asks for variations. All five fields are optional. If present, title, subtitle, details, and section must be strings; tags must be an array of strings. Property names are lowercase and case-sensitive. Extra properties are ignored.",
                     ["wrap"] = true,
                 },
                 new JsonObject
@@ -1284,7 +1284,7 @@ internal sealed partial class UserCommandsSettingsForm : FormContent
                 new JsonObject
                 {
                     ["type"] = "TextBlock",
-                    ["text"] = "A single unlabelled or json Markdown code fence is accepted. Invalid formatted output automatically uses the normal output rules. When enabled, the app sends the global advanced output system prompt before the command prompt; edit it in the Global settings section.",
+                    ["text"] = "Arrays preserve element order and may be empty. Invalid array elements appear as error results with their original JSON in details; root fallback results skip them and use the first valid object. A single unlabelled or json Markdown code fence is accepted. Other invalid formatted output uses the normal output rules. The global system prompt controls this format and can be edited in Global settings.",
                     ["isSubtle"] = true,
                     ["wrap"] = true,
                 },

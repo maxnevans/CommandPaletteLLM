@@ -222,8 +222,8 @@ internal sealed partial class FormattedCommandPage : DynamicListPage, IDisposabl
             Publish(
                 requestVersion,
                 responses
-                    .Select((response, index) =>
-                        (IListItem)CreateResponseItem(
+                    .SelectMany((response, index) =>
+                        CreateResponseItems(
                             response,
                             index,
                             responses.Count,
@@ -402,18 +402,40 @@ internal sealed partial class FormattedCommandPage : DynamicListPage, IDisposabl
     private static ListItem CreateStatusItem(string message) =>
         new(new NoOpCommand()) { Title = message };
 
-    private static ListItem CreateResponseItem(
+    private static IListItem[] CreateResponseItems(
         string response,
         int index,
         int responseCount,
         bool enableAdvancedOutput)
     {
-        if (enableAdvancedOutput && AdvancedOutputParser.TryParse(response, out var output))
+        if (enableAdvancedOutput && AdvancedOutputParser.TryParse(response, out var entries))
         {
-            return CreateAdvancedResponseItem(output);
+            return entries
+                .Select(entry => (IListItem)CreateAdvancedResponseItem(entry))
+                .ToArray();
         }
 
-        return CreateDefaultResponseItem(response, index, responseCount);
+        return [CreateDefaultResponseItem(response, index, responseCount)];
+    }
+
+    private static ListItem CreateAdvancedResponseItem(AdvancedOutputEntry entry)
+    {
+        if (entry.Output is not null)
+        {
+            return CreateAdvancedResponseItem(entry.Output);
+        }
+
+        return new ListItem(new CopyTextCommand(entry.RawContent))
+        {
+            Title = entry.ErrorTitle,
+            TextToSuggest = entry.RawContent,
+            Details = new Details
+            {
+                Title = entry.ErrorTitle,
+                Body = entry.RawContent,
+                Size = ContentSize.Large,
+            },
+        };
     }
 
     private static ListItem CreateAdvancedResponseItem(AdvancedOutput output)

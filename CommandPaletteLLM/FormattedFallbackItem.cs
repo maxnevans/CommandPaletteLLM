@@ -1,5 +1,6 @@
 using Microsoft.CommandPalette.Extensions.Toolkit;
 using System;
+using System.Linq;
 using System.Net.Http;
 using System.Text.Json;
 using System.Threading;
@@ -144,8 +145,22 @@ internal sealed partial class FormattedFallbackItem : FallbackCommandItem
         string response,
         CancellationToken cancellationToken)
     {
-        if (_enableAdvancedOutput && AdvancedOutputParser.TryParse(response, out var output))
+        if (_enableAdvancedOutput && AdvancedOutputParser.TryParse(response, out var entries))
         {
+            var output = entries
+                .Select(entry => entry.Output)
+                .FirstOrDefault(output => output is not null);
+            if (output is null)
+            {
+                Publish(
+                    requestVersion,
+                    string.Empty,
+                    string.Empty,
+                    copyText: null,
+                    cancellationToken);
+                return;
+            }
+
             Publish(
                 requestVersion,
                 output.Title,
