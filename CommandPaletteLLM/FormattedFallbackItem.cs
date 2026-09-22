@@ -13,6 +13,7 @@ internal sealed partial class FormattedFallbackItem : FallbackCommandItem
     private readonly StableCopyTextCommand _copyCommand;
     private readonly string _promptFormat;
     private readonly string _customRequestArguments;
+    private readonly string _templateRequestArguments;
     private readonly bool _enableAdvancedOutput;
     private readonly bool _useGlobalAdvancedOutputSystemPrompt;
     private readonly string _advancedOutputSystemPrompt;
@@ -40,7 +41,8 @@ internal sealed partial class FormattedFallbackItem : FallbackCommandItem
         Func<string, bool>? isTopLevelCommandQuery = null,
         Action? rootQueryObserved = null,
         ILlmEndpointMonitor? endpointMonitor = null,
-        string advancedOutputSystemPrompt = "")
+        string advancedOutputSystemPrompt = "",
+        string templateRequestArguments = "")
         : base(
             CreateCopyCommand(definition.Id),
             definition.Name,
@@ -50,6 +52,7 @@ internal sealed partial class FormattedFallbackItem : FallbackCommandItem
             throw new InvalidOperationException("The fallback copy command was not initialized.");
         _promptFormat = definition.OutputFormat;
         _customRequestArguments = definition.CustomRequestArguments;
+        _templateRequestArguments = templateRequestArguments;
         _enableAdvancedOutput = definition.EnableAdvancedOutput;
         _useGlobalAdvancedOutputSystemPrompt = definition.UseGlobalAdvancedOutputSystemPrompt;
         _advancedOutputSystemPrompt = advancedOutputSystemPrompt;
@@ -107,6 +110,7 @@ internal sealed partial class FormattedFallbackItem : FallbackCommandItem
                     !string.IsNullOrWhiteSpace(_advancedOutputSystemPrompt)
                     ? _advancedOutputSystemPrompt
                     : null,
+                templateRequestArguments: _templateRequestArguments,
                 customRequestArguments: _customRequestArguments,
                 cancellationToken: cancellationToken)
                 .ConfigureAwait(false);

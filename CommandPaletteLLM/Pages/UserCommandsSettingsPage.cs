@@ -12,9 +12,11 @@ internal sealed partial class UserCommandsSettingsPage : ContentPage
         UserCommandStore store,
         LlmProviderSettingsStore providerSettingsStore,
         GlobalSettingsStore globalSettingsStore,
+        JsonRequestTemplateStore requestTemplateStore,
         Action commandsChanged,
         Action globalSettingsChanged,
-        Action providerSettingsChanged)
+        Action providerSettingsChanged,
+        Action requestTemplatesChanged)
     {
         Title = "Command Palette LLM settings";
         Name = "Settings";
@@ -23,9 +25,11 @@ internal sealed partial class UserCommandsSettingsPage : ContentPage
             store,
             providerSettingsStore,
             globalSettingsStore,
+            requestTemplateStore,
             commandsChanged,
             globalSettingsChanged,
-            providerSettingsChanged);
+            providerSettingsChanged,
+            requestTemplatesChanged);
     }
 
     public override IContent[] GetContent() => [_form];

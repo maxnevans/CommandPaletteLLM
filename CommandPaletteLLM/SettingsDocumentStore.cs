@@ -22,6 +22,7 @@ internal sealed class SettingsDocumentStore
     private readonly IDataProtector _dataProtector;
     private GlobalSettings _globalSettings;
     private List<LlmProviderSettings> _providers;
+    private List<JsonRequestTemplateDefinition> _jsonRequestTemplates;
     private List<UserCommandDefinition> _commands;
     private bool _beautifulFormatting;
 
@@ -64,7 +65,10 @@ internal sealed class SettingsDocumentStore
             _providers = NormalizeProviders(
                 document.Providers.Select(provider =>
                     LlmProviderSettingsStore.FromStored(provider, dataProtector)));
-            _commands = NormalizeCommands(document.Commands);
+            _jsonRequestTemplates = NormalizeJsonRequestTemplates(
+                document.JsonRequestTemplates,
+                _providers);
+            _commands = NormalizeCommands(document.Commands, _jsonRequestTemplates);
             return;
         }
 
@@ -74,6 +78,7 @@ internal sealed class SettingsDocumentStore
             legacyProviderPath,
             dataProtector,
             out _);
+        _jsonRequestTemplates = [];
         _commands = UserCommandStore.LoadCommands(legacyCommandsPath);
 
         var hasLegacySettings =
@@ -120,6 +125,14 @@ internal sealed class SettingsDocumentStore
         }
     }
 
+    internal IReadOnlyList<JsonRequestTemplateDefinition> GetJsonRequestTemplates()
+    {
+        lock (_sync)
+        {
+            return _jsonRequestTemplates.Select(template => template.Clone()).ToArray();
+        }
+    }
+
     internal void ReplaceGlobalSettings(GlobalSettings settings)
     {
         lock (_sync)
@@ -134,6 +147,21 @@ internal sealed class SettingsDocumentStore
         lock (_sync)
         {
             _providers = NormalizeProviders(providers);
+            _jsonRequestTemplates = NormalizeJsonRequestTemplates(
+                _jsonRequestTemplates,
+                _providers);
+            _commands = NormalizeCommands(_commands, _jsonRequestTemplates);
+            Save();
+        }
+    }
+
+    internal void ReplaceJsonRequestTemplates(
+        IEnumerable<JsonRequestTemplateDefinition> templates)
+    {
+        lock (_sync)
+        {
+            _jsonRequestTemplates = NormalizeJsonRequestTemplates(templates, _providers);
+            _commands = NormalizeCommands(_commands, _jsonRequestTemplates);
             Save();
         }
     }
@@ -143,6 +171,7 @@ internal sealed class SettingsDocumentStore
         lock (_sync)
         {
             _commands = commands.Select(command => command.Clone()).ToList();
+            _commands = NormalizeCommands(_commands, _jsonRequestTemplates);
             Save();
         }
     }
@@ -198,6 +227,7 @@ internal sealed class SettingsDocumentStore
             {
                 _globalSettings = new GlobalSettings();
                 _providers = [new LlmProviderSettings()];
+                _jsonRequestTemplates = [];
                 _commands = [];
                 _beautifulFormatting = false;
                 return;
@@ -254,6 +284,9 @@ internal sealed class SettingsDocumentStore
             Global = _globalSettings.Clone(),
             Providers = _providers
                 .Select(provider => LlmProviderSettingsStore.ToStored(provider, _dataProtector))
+                .ToList(),
+            JsonRequestTemplates = _jsonRequestTemplates
+                .Select(template => template.Clone())
                 .ToList(),
             Commands = _commands.Select(command => command.Clone()).ToList(),
         };
@@ -315,6 +348,7 @@ internal sealed class SettingsDocumentStore
                 CommandPaletteJsonContext.Default.SettingsDocument) ?? new SettingsDocument();
             document.Global ??= new GlobalSettings();
             document.Providers ??= [];
+            document.JsonRequestTemplates ??= [];
             document.Commands ??= [];
             beautifulFormatting =
                 document.BeautifulFormatting ??
@@ -374,12 +408,67 @@ internal sealed class SettingsDocumentStore
         return normalized.Count == 0 ? [new LlmProviderSettings()] : normalized;
     }
 
+    private static List<JsonRequestTemplateDefinition> NormalizeJsonRequestTemplates(
+        IEnumerable<JsonRequestTemplateDefinition> templates,
+        IReadOnlyList<LlmProviderSettings> providers)
+    {
+        var providerIds = providers.Select(provider => provider.Id).ToHashSet(StringComparer.Ordinal);
+        var templateIds = new HashSet<string>(StringComparer.Ordinal);
+        var identities = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        var normalized = new List<JsonRequestTemplateDefinition>();
+        foreach (var source in templates)
+        {
+            var template = source.Clone();
+            template.Name = template.Name.Trim();
+            if (string.IsNullOrWhiteSpace(template.Id) ||
+                string.IsNullOrWhiteSpace(template.Name) ||
+                !providerIds.Contains(template.ProviderId) ||
+                !CustomRequestArguments.TryParse(
+                    template.RequestArguments,
+                    out var arguments,
+                    out _))
+            {
+                continue;
+            }
+
+            arguments?.Dispose();
+            var identity = $"{template.ProviderId}\0{template.Name}";
+            if (!templateIds.Contains(template.Id) && !identities.Contains(identity))
+            {
+                templateIds.Add(template.Id);
+                identities.Add(identity);
+                normalized.Add(template);
+            }
+        }
+
+        return normalized;
+    }
+
     private static List<UserCommandDefinition> NormalizeCommands(
-        IEnumerable<UserCommandDefinition> commands) => commands
+        IEnumerable<UserCommandDefinition> commands,
+        IReadOnlyList<JsonRequestTemplateDefinition> templates)
+    {
+        var templatesById = templates.ToDictionary(template => template.Id, StringComparer.Ordinal);
+        return commands
             .Where(UserCommandStore.IsValidStoredCommand)
             .GroupBy(command => command.Id, StringComparer.Ordinal)
-            .Select(group => group.First().Clone())
+            .Select(group =>
+            {
+                var command = group.First().Clone();
+                if (!string.IsNullOrEmpty(command.RequestTemplateId) &&
+                    (!templatesById.TryGetValue(command.RequestTemplateId, out var template) ||
+                        !string.Equals(
+                            template.ProviderId,
+                            command.ProviderId,
+                            StringComparison.Ordinal)))
+                {
+                    command.RequestTemplateId = string.Empty;
+                }
+
+                return command;
+            })
             .ToList();
+    }
 
     private void ApplyDocument(SettingsDocument document)
     {
@@ -387,7 +476,10 @@ internal sealed class SettingsDocumentStore
         _providers = NormalizeProviders(
             document.Providers.Select(provider =>
                 LlmProviderSettingsStore.FromStored(provider, _dataProtector)));
-        _commands = NormalizeCommands(document.Commands);
+        _jsonRequestTemplates = NormalizeJsonRequestTemplates(
+            document.JsonRequestTemplates,
+            _providers);
+        _commands = NormalizeCommands(document.Commands, _jsonRequestTemplates);
     }
 
     private static void DeleteLegacyFile(string? filePath)

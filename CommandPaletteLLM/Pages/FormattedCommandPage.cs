@@ -17,6 +17,7 @@ internal sealed partial class FormattedCommandPage : DynamicListPage, IDisposabl
 
     private readonly string _promptFormat;
     private readonly string _customRequestArguments;
+    private readonly string _templateRequestArguments;
     private readonly bool _enableAdvancedOutput;
     private readonly bool _useGlobalAdvancedOutputSystemPrompt;
     private readonly string _advancedOutputSystemPrompt;
@@ -51,10 +52,12 @@ internal sealed partial class FormattedCommandPage : DynamicListPage, IDisposabl
         ILlmEndpointMonitor? endpointMonitor = null,
         TimeSpan? retryDelay = null,
         TimeSpan? statusUpdateInterval = null,
-        string advancedOutputSystemPrompt = "")
+        string advancedOutputSystemPrompt = "",
+        string templateRequestArguments = "")
     {
         _promptFormat = definition.OutputFormat;
         _customRequestArguments = definition.CustomRequestArguments;
+        _templateRequestArguments = templateRequestArguments;
         _enableAdvancedOutput = definition.EnableAdvancedOutput;
         _useGlobalAdvancedOutputSystemPrompt = definition.UseGlobalAdvancedOutputSystemPrompt;
         _advancedOutputSystemPrompt = advancedOutputSystemPrompt;
@@ -221,6 +224,7 @@ internal sealed partial class FormattedCommandPage : DynamicListPage, IDisposabl
                     !string.IsNullOrWhiteSpace(_advancedOutputSystemPrompt)
                     ? _advancedOutputSystemPrompt
                     : null,
+                _templateRequestArguments,
                 _customRequestArguments,
                 cancellationToken).ConfigureAwait(false);
             Publish(

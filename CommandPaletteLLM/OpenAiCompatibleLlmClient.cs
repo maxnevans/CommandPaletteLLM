@@ -59,6 +59,7 @@ internal sealed class OpenAiCompatibleLlmClient : ILlmClient
     public async Task<IReadOnlyList<string>> CompleteAsync(
         string prompt,
         string? systemPrompt,
+        string templateRequestArguments,
         string customRequestArguments,
         CancellationToken cancellationToken)
     {
@@ -75,6 +76,7 @@ internal sealed class OpenAiCompatibleLlmClient : ILlmClient
             settings.Model,
             prompt,
             systemPrompt,
+            templateRequestArguments,
             customRequestArguments);
 
         if (!string.IsNullOrWhiteSpace(settings.ApiKey))
@@ -144,6 +146,17 @@ internal sealed class OpenAiCompatibleLlmClient : ILlmClient
         }
     }
 
+    internal Task<IReadOnlyList<string>> CompleteAsync(
+        string prompt,
+        string? systemPrompt,
+        string customRequestArguments,
+        CancellationToken cancellationToken) => CompleteAsync(
+            prompt,
+            systemPrompt,
+            string.Empty,
+            customRequestArguments,
+            cancellationToken);
+
     private static Uri BuildChatCompletionsUri(string baseUrl)
     {
         var normalized = baseUrl.Trim().TrimEnd('/');
@@ -159,9 +172,11 @@ internal sealed class OpenAiCompatibleLlmClient : ILlmClient
         string model,
         string prompt,
         string? systemPrompt,
+        string templateRequestArguments,
         string customRequestArguments)
     {
-        if (!CustomRequestArguments.TryParse(
+        if (!CustomRequestArguments.TryMerge(
+            templateRequestArguments,
             customRequestArguments,
             out var customArguments,
             out var error))

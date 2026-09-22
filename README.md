@@ -73,6 +73,28 @@ Open the **Command Palette LLM** extension settings and expand **LLM providers**
 
 The extension appends `/chat/completions` when needed and checks the corresponding `/models` endpoint before sending a prompt. Add more providers when different commands should use different local models or services.
 
+## Create a JSON request template
+
+Use **JSON Request Templates** to reuse provider-specific request fields across
+commands. Add a template, assign it to an LLM provider, and enter a static JSON
+object such as:
+
+```json
+{
+  "temperature": 0.7,
+  "chat_template_kwargs": {
+    "enable_thinking": true,
+    "reasoning_effort": "medium"
+  }
+}
+```
+
+Template names must be unique within their provider. A command can select only a
+template assigned to the same provider, and **None** disables template use. Use
+**Apply provider** while editing a command to refresh the template list without
+saving the command. Deleting or reassigning a template resets affected commands
+to **None**.
+
 ## Create a command
 
 In the extension settings, enter a command name, select **Add**, and edit the new command. Each command supports:
@@ -82,6 +104,7 @@ In the extension settings, enter a command name, select **Add**, and edit the ne
 | Command name | The top-level command and fallback label. Names must be unique. |
 | Prompt format | The exact prompt sent to the provider. Every `{}` is replaced with the user's query. |
 | Custom request arguments | Optional provider-specific JSON body fields, including reasoning controls or `n`. |
+| JSON request template | Optional reusable request fields assigned to the selected provider. |
 | Advanced output | Interprets a compatible JSON response as rich Command Palette metadata. |
 | Send delay | Wait time after typing before a request is sent. The default is 650 ms. |
 | LLM provider | Provider used for this command. |
@@ -98,9 +121,10 @@ Summarize the following text in one concise sentence:
 
 Use `{{` and `}}` when the prompt itself needs literal braces. A template may contain `{}` more than once; `{0}` and unmatched braces are rejected.
 
-Custom request arguments must be a JSON object. They are added as top-level fields
-to the `/chat/completions` request body and are not used as a template, so `{}` in
-string values remains literal. For example:
+Custom request arguments must be a JSON object. They are merged over the selected
+JSON request template and added as top-level fields to the `/chat/completions`
+request body. Request JSON is static, so `{}` in string values remains literal.
+For example:
 
 ```json
 {
@@ -114,9 +138,11 @@ string values remains literal. For example:
 ```
 
 The extension always controls `model` and `messages`; those property names are
-rejected in custom arguments regardless of casing. Other custom fields are sent
-unchanged, including nested objects, arrays, primitives, and `null`. The arguments
-affect only the JSON body, not the provider URL or HTTP headers. If `n` is omitted,
+rejected in templates and custom arguments regardless of casing. Command-specific
+objects recursively override template objects. Arrays and primitives replace the
+corresponding template value; setting a matching command value to `null` removes
+that field from the final request. Other fields affect only
+the JSON body, not the provider URL or HTTP headers. If `n` is omitted,
 the provider chooses its default number of responses. Dedicated command pages show
 every returned choice, while fallback results use the first choice. This is independent
 of advanced-output arrays requested through the user's natural-language prompt.
@@ -187,7 +213,7 @@ CommandPaletteLLM/
 
 API keys are encrypted for the current Windows user with Windows DPAPI before
 they are stored in the `Providers` section of `settings.json`. Global settings,
-providers, and commands are stored together in that file. Existing
+providers, JSON request templates, and commands are stored together in that file. Existing
 `commands.json`, `providers.json`, and `provider.json` files are migrated
 automatically. Prompts are sent only to the provider
 assigned to the command, and a non-local provider must be explicitly authorized

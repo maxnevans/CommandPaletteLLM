@@ -599,6 +599,310 @@ public sealed class UserCommandsTests
     }
 
     [Fact]
+    public void Settings_AddsEditsAndDeletesJsonRequestTemplates()
+    {
+        var commandStore = new UserCommandStore(filePath: null);
+        AddCommand(commandStore, "Summarize", "Summarize: {}", "summarize");
+        var providerStore = new LlmProviderSettingsStore(filePath: null);
+        var templateStore = new JsonRequestTemplateStore();
+        var form = new UserCommandsSettingsForm(
+            commandStore,
+            providerStore,
+            new GlobalSettingsStore(filePath: null),
+            templateStore,
+            () => { },
+            () => { },
+            () => { },
+            () => { });
+
+        form.SubmitForm(
+            """{"newRequestTemplateName":"Creative"}""",
+            """{"actionId":"add-request-template"}""");
+
+        var template = Assert.Single(templateStore.GetTemplates());
+        Assert.Equal("Creative", template.Name);
+        Assert.Equal("default", template.ProviderId);
+        Assert.Equal("{}", template.RequestArguments);
+        Assert.True(
+            form.TemplateJson.IndexOf("JSON Request Templates", StringComparison.Ordinal) <
+            form.TemplateJson.IndexOf("\"text\":\"Commands\"", StringComparison.Ordinal));
+
+        form.SubmitForm(
+            $$"""{"requestTemplateName_{{template.Id}}":"Focused","requestTemplateArguments_{{template.Id}}":"{\"temperature\":0.2}"}""",
+            $$"""{"actionId":"save-request-template:{{template.Id}}"}""");
+
+        template = Assert.Single(templateStore.GetTemplates());
+        Assert.Equal("Focused", template.Name);
+        Assert.Equal("""{"temperature":0.2}""", template.RequestArguments);
+
+        commandStore.ReplaceAll(commandStore.GetCommands().Select(command =>
+        {
+            command.RequestTemplateId = template.Id;
+            return command;
+        }));
+        form.SubmitForm(
+            "{}",
+            $$"""{"actionId":"delete-request-template:{{template.Id}}"}""");
+
+        Assert.Empty(templateStore.GetTemplates());
+        Assert.Empty(Assert.Single(commandStore.GetCommands()).RequestTemplateId);
+    }
+
+    [Fact]
+    public void Settings_JsonRequestTemplateNamesAreUniquePerProvider()
+    {
+        var commandStore = new UserCommandStore(filePath: null);
+        var providerStore = new LlmProviderSettingsStore(filePath: null);
+        providerStore.ReplaceAll(
+        [
+            new LlmProviderSettings { Id = "default", Name = "Local" },
+            new LlmProviderSettings { Id = "remote", Name = "Remote" },
+        ]);
+        var templateStore = new JsonRequestTemplateStore();
+        templateStore.ReplaceAll(
+        [
+            new JsonRequestTemplateDefinition
+            {
+                Id = "local",
+                Name = "Shared name",
+                ProviderId = "default",
+            },
+            new JsonRequestTemplateDefinition
+            {
+                Id = "remote",
+                Name = "Shared name",
+                ProviderId = "remote",
+            },
+        ]);
+        var form = new UserCommandsSettingsForm(
+            commandStore,
+            providerStore,
+            new GlobalSettingsStore(filePath: null),
+            templateStore,
+            () => { },
+            () => { },
+            () => { },
+            () => { });
+
+        form.SubmitForm(
+            """{"newRequestTemplateName":"SHARED NAME"}""",
+            """{"actionId":"add-request-template"}""");
+
+        Assert.Equal(2, templateStore.GetTemplates().Count);
+        Assert.Contains("unique per provider", form.TemplateJson, StringComparison.Ordinal);
+    }
+
+    [Theory]
+    [InlineData("not json", "valid JSON")]
+    [InlineData("[]", "JSON object")]
+    [InlineData("{\"model\":\"other\"}", "protected")]
+    [InlineData("{\"MESSAGES\":[]}", "protected")]
+    public void Settings_RejectsInvalidJsonRequestTemplates(string arguments, string expectedError)
+    {
+        var templateStore = new JsonRequestTemplateStore();
+        templateStore.ReplaceAll(
+        [
+            new JsonRequestTemplateDefinition { Id = "template", Name = "Template" },
+        ]);
+        var form = new UserCommandsSettingsForm(
+            new UserCommandStore(filePath: null),
+            new LlmProviderSettingsStore(filePath: null),
+            new GlobalSettingsStore(filePath: null),
+            templateStore,
+            () => { },
+            () => { },
+            () => { },
+            () => { });
+        var payload = JsonSerializer.Serialize(new Dictionary<string, string>
+        {
+            ["requestTemplateArguments_template"] = arguments,
+        });
+
+        form.SubmitForm(payload, """{"actionId":"save-request-template:template"}""");
+
+        Assert.Equal("{}", Assert.Single(templateStore.GetTemplates()).RequestArguments);
+        Assert.Contains(expectedError, form.TemplateJson, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void Settings_ApplyProviderRefreshesTemplatePickerAndClearsMismatch()
+    {
+        var commandStore = new UserCommandStore(filePath: null);
+        AddCommand(commandStore, "Summarize", "Summarize: {}", "summarize");
+        var command = Assert.Single(commandStore.GetCommands());
+        command.RequestTemplateId = "local-template";
+        commandStore.ReplaceAll([command]);
+        var providerStore = new LlmProviderSettingsStore(filePath: null);
+        providerStore.ReplaceAll(
+        [
+            new LlmProviderSettings { Id = "default", Name = "Local" },
+            new LlmProviderSettings { Id = "remote", Name = "Remote" },
+        ]);
+        var templateStore = new JsonRequestTemplateStore();
+        templateStore.ReplaceAll(
+        [
+            new JsonRequestTemplateDefinition
+            {
+                Id = "local-template",
+                Name = "Local template",
+                ProviderId = "default",
+            },
+            new JsonRequestTemplateDefinition
+            {
+                Id = "remote-template",
+                Name = "Remote template",
+                ProviderId = "remote",
+            },
+        ]);
+        var form = new UserCommandsSettingsForm(
+            commandStore,
+            providerStore,
+            new GlobalSettingsStore(filePath: null),
+            templateStore,
+            () => { },
+            () => { },
+            () => { },
+            () => { });
+        form.SubmitForm("{}", """{"actionId":"edit:summarize"}""");
+
+        form.SubmitForm(
+            """{"provider_summarize":"remote","requestTemplate_summarize":"local-template"}""",
+            """{"actionId":"apply-provider:summarize"}""");
+
+        Assert.Contains(
+            "\"id\":\"requestTemplate_summarize\",\"label\":\"JSON request template\",\"style\":\"compact\",\"value\":\"\",\"choices\":[{\"title\":\"None\",\"value\":\"\"},{\"title\":\"Remote template\",\"value\":\"remote-template\"}]",
+            form.TemplateJson,
+            StringComparison.Ordinal);
+        Assert.Equal("default", Assert.Single(commandStore.GetCommands()).ProviderId);
+        Assert.Equal("local-template", Assert.Single(commandStore.GetCommands()).RequestTemplateId);
+
+        form.SubmitForm(
+            """{"provider_summarize":"remote","requestTemplate_summarize":"remote-template"}""",
+            """{"actionId":"save:summarize"}""");
+
+        Assert.Equal("remote", Assert.Single(commandStore.GetCommands()).ProviderId);
+        Assert.Equal("remote-template", Assert.Single(commandStore.GetCommands()).RequestTemplateId);
+    }
+
+    [Fact]
+    public void Settings_TemplatePickerContainsOnlyNoneWhenProviderHasNoTemplates()
+    {
+        var commandStore = new UserCommandStore(filePath: null);
+        AddCommand(commandStore, "Summarize", "{}", "summarize");
+        var form = new UserCommandsSettingsForm(
+            commandStore,
+            new LlmProviderSettingsStore(filePath: null),
+            new GlobalSettingsStore(filePath: null),
+            new JsonRequestTemplateStore(),
+            () => { },
+            () => { },
+            () => { },
+            () => { });
+
+        form.SubmitForm("{}", """{"actionId":"edit:summarize"}""");
+
+        Assert.Contains(
+            "\"id\":\"requestTemplate_summarize\",\"label\":\"JSON request template\",\"style\":\"compact\",\"value\":\"\",\"choices\":[{\"title\":\"None\",\"value\":\"\"}]",
+            form.TemplateJson,
+            StringComparison.Ordinal);
+        var pickerIndex = form.TemplateJson.IndexOf(
+            "\"id\":\"requestTemplate_summarize\"",
+            StringComparison.Ordinal);
+        var customArgumentsIndex = form.TemplateJson.IndexOf(
+            "\"id\":\"requestArguments_summarize\"",
+            StringComparison.Ordinal);
+        Assert.True(pickerIndex < customArgumentsIndex);
+        Assert.Contains(
+            "The template supplies base values; custom request arguments below override matching values recursively",
+            form.TemplateJson,
+            StringComparison.Ordinal);
+        Assert.Contains(
+            "Set a matching custom value to null to omit that field from the request",
+            form.TemplateJson,
+            StringComparison.Ordinal);
+        Assert.Contains(
+            "\"type\":\"Image\",\"url\":\"data:image/png;base64,",
+            form.TemplateJson,
+            StringComparison.Ordinal);
+        Assert.Contains(
+            "\"altText\":\"Section separator\",\"width\":\"stretch\",\"height\":\"1px\",\"spacing\":\"Small\"",
+            form.TemplateJson,
+            StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void Settings_ReassigningTemplateClearsIncompatibleCommands()
+    {
+        var commandStore = new UserCommandStore(filePath: null);
+        AddCommand(commandStore, "Summarize", "{}", "summarize");
+        var command = Assert.Single(commandStore.GetCommands());
+        command.RequestTemplateId = "template";
+        commandStore.ReplaceAll([command]);
+        var providerStore = new LlmProviderSettingsStore(filePath: null);
+        providerStore.ReplaceAll(
+        [
+            new LlmProviderSettings { Id = "default", Name = "Local" },
+            new LlmProviderSettings { Id = "remote", Name = "Remote" },
+        ]);
+        var templateStore = new JsonRequestTemplateStore();
+        templateStore.ReplaceAll(
+        [
+            new JsonRequestTemplateDefinition { Id = "template", Name = "Template" },
+        ]);
+        var form = new UserCommandsSettingsForm(
+            commandStore,
+            providerStore,
+            new GlobalSettingsStore(filePath: null),
+            templateStore,
+            () => { },
+            () => { },
+            () => { },
+            () => { });
+
+        form.SubmitForm(
+            """{"requestTemplateProvider_template":"remote"}""",
+            """{"actionId":"save-request-template:template"}""");
+
+        Assert.Equal("remote", Assert.Single(templateStore.GetTemplates()).ProviderId);
+        Assert.Empty(Assert.Single(commandStore.GetCommands()).RequestTemplateId);
+    }
+
+    [Fact]
+    public void Settings_DeletingUnusedProviderAlsoDeletesItsTemplates()
+    {
+        var providerStore = new LlmProviderSettingsStore(filePath: null);
+        providerStore.ReplaceAll(
+        [
+            new LlmProviderSettings { Id = "default", Name = "Local" },
+            new LlmProviderSettings { Id = "remote", Name = "Remote" },
+        ]);
+        var templateStore = new JsonRequestTemplateStore();
+        templateStore.ReplaceAll(
+        [
+            new JsonRequestTemplateDefinition
+            {
+                Id = "remote-template",
+                Name = "Remote template",
+                ProviderId = "remote",
+            },
+        ]);
+        var form = new UserCommandsSettingsForm(
+            new UserCommandStore(filePath: null),
+            providerStore,
+            new GlobalSettingsStore(filePath: null),
+            templateStore,
+            () => { },
+            () => { },
+            () => { },
+            () => { });
+
+        form.SubmitForm("{}", """{"actionId":"delete-provider:remote"}""");
+
+        Assert.Null(providerStore.Get("remote"));
+        Assert.Empty(templateStore.GetTemplates());
+    }
+
+    [Fact]
     public void Settings_ClearsProviderApiKeyWithAButton()
     {
         var commandStore = new UserCommandStore(filePath: null);
@@ -767,6 +1071,51 @@ public sealed class UserCommandsTests
         Assert.Equal("Hello Maxim!", Assert.Single(client.Prompts));
         Assert.Equal("""{"n":2}""", Assert.Single(client.RequestArguments));
         Assert.False(page.IsLoading);
+    }
+
+    [Fact]
+    public void Provider_ForwardsSelectedTemplateToPageAndFallbackRequests()
+    {
+        var commandStore = new UserCommandStore(filePath: null);
+        AddCommand(
+            commandStore,
+            "Summarize",
+            "Summarize: {}",
+            "summarize",
+            sendDelayMilliseconds: 0);
+        var command = Assert.Single(commandStore.GetCommands());
+        command.RequestTemplateId = "creative";
+        commandStore.ReplaceAll([command]);
+        var templateStore = new JsonRequestTemplateStore();
+        templateStore.ReplaceAll(
+        [
+            new JsonRequestTemplateDefinition
+            {
+                Id = "creative",
+                Name = "Creative",
+                ProviderId = "default",
+                RequestArguments = """{"temperature":0.9}""",
+            },
+        ]);
+        var client = new RecordingLlmClient("answer");
+        var provider = new CommandPaletteLLMCommandsProvider(
+            commandStore,
+            new LlmProviderSettingsStore(filePath: null),
+            new GlobalSettingsStore(filePath: null),
+            templateStore,
+            client,
+            new ControllableEndpointMonitor(LlmEndpointStatus.Available));
+
+        var page = Assert.IsType<FormattedCommandPage>(
+            Assert.Single(provider.TopLevelCommands()).Command);
+        page.SearchText = "page query";
+        var fallback = Assert.IsType<FormattedFallbackItem>(
+            Assert.Single(provider.FallbackCommands()));
+        fallback.FallbackHandler!.UpdateQuery("fallback query");
+
+        Assert.Equal(
+            ["""{"temperature":0.9}""", """{"temperature":0.9}"""],
+            client.TemplateRequestArguments);
     }
 
     [Fact]
@@ -1549,6 +1898,61 @@ public sealed class UserCommandsTests
         Assert.False(root.GetProperty("chat_template_kwargs").GetProperty("preserve_thinking").GetBoolean());
     }
 
+    [Fact]
+    public async Task OpenAiClient_RecursivelyMergesTemplateAndCommandRequestArguments()
+    {
+        var store = new LlmProviderSettingsStore(filePath: null);
+        store.Replace(new LlmProviderSettings
+        {
+            BaseUrl = "http://127.0.0.1:8080/v1",
+            Model = "local-model",
+        });
+        var handler = new RecordingHttpMessageHandler(
+            """{"choices":[{"message":{"content":"answer"}}]}""");
+        var client = new OpenAiCompatibleLlmClient(store, new HttpClient(handler));
+
+        await client.CompleteAsync(
+            "Prompt",
+            systemPrompt: null,
+            """{"Temperature":1,"temperature":0.8,"n":1,"stop":["OLD"],"chat_template_kwargs":{"enable_thinking":true,"reasoning_effort":"low"}}""",
+            """{"temperature":0.2,"n":null,"stop":["NEW"],"chat_template_kwargs":{"reasoning_effort":"high"}}""",
+            CancellationToken.None);
+
+        using var requestJson = JsonDocument.Parse(Assert.IsType<string>(handler.RequestBody));
+        var root = requestJson.RootElement;
+        Assert.Equal("local-model", root.GetProperty("model").GetString());
+        Assert.Equal("Prompt", root.GetProperty("messages")[0].GetProperty("content").GetString());
+        Assert.Equal(0.2, root.GetProperty("temperature").GetDouble());
+        Assert.Equal(1, root.GetProperty("Temperature").GetInt32());
+        Assert.Equal("NEW", root.GetProperty("stop")[0].GetString());
+        Assert.True(root.GetProperty("chat_template_kwargs").GetProperty("enable_thinking").GetBoolean());
+        Assert.Equal(
+            "high",
+            root.GetProperty("chat_template_kwargs").GetProperty("reasoning_effort").GetString());
+        Assert.False(root.TryGetProperty("n", out _));
+    }
+
+    [Theory]
+    [InlineData("{\"model\":\"other\"}")]
+    [InlineData("{\"MESSAGES\":[]}")]
+    public async Task OpenAiClient_RejectsProtectedFieldsInTemplate(string templateArguments)
+    {
+        var store = new LlmProviderSettingsStore(filePath: null);
+        var handler = new RecordingHttpMessageHandler("{}");
+        var client = new OpenAiCompatibleLlmClient(store, new HttpClient(handler));
+
+        var exception = await Assert.ThrowsAsync<LlmRequestException>(() =>
+            client.CompleteAsync(
+                "Prompt",
+                systemPrompt: null,
+                templateArguments,
+                customRequestArguments: string.Empty,
+                CancellationToken.None));
+
+        Assert.Contains("protected", exception.Message, StringComparison.Ordinal);
+        Assert.Null(handler.RequestBody);
+    }
+
     [Theory]
     [InlineData("not json")]
     [InlineData("[]")]
@@ -1868,6 +2272,57 @@ public sealed class UserCommandsTests
     }
 
     [Fact]
+    public void SettingsDocumentStore_PersistsTemplatesAndNormalizesCommandReferences()
+    {
+        var directory = Path.Combine(Path.GetTempPath(), $"CommandPaletteLLM.Tests-{Guid.NewGuid():N}");
+        var settingsPath = Path.Combine(directory, "settings.json");
+
+        try
+        {
+            var documentStore = CreateSettingsDocumentStore(settingsPath);
+            var templateStore = new JsonRequestTemplateStore(documentStore);
+            templateStore.ReplaceAll(
+            [
+                new JsonRequestTemplateDefinition
+                {
+                    Id = "template",
+                    Name = "Template",
+                    ProviderId = "default",
+                    RequestArguments = """{"temperature":0.4}""",
+                },
+            ]);
+            var commandStore = new UserCommandStore(documentStore);
+            AddCommand(commandStore, "Greeting", "{}", "greeting");
+            var command = Assert.Single(commandStore.GetCommands());
+            command.RequestTemplateId = "template";
+            commandStore.ReplaceAll([command]);
+
+            var reloaded = CreateSettingsDocumentStore(settingsPath);
+
+            Assert.Equal("Template", Assert.Single(reloaded.GetJsonRequestTemplates()).Name);
+            Assert.Equal("template", Assert.Single(reloaded.GetCommands()).RequestTemplateId);
+            var json = File.ReadAllText(settingsPath);
+            Assert.True(
+                json.IndexOf("\"Providers\"", StringComparison.Ordinal) <
+                json.IndexOf("\"JsonRequestTemplates\"", StringComparison.Ordinal));
+            Assert.True(
+                json.IndexOf("\"JsonRequestTemplates\"", StringComparison.Ordinal) <
+                json.IndexOf("\"Commands\"", StringComparison.Ordinal));
+
+            new JsonRequestTemplateStore(reloaded).ReplaceAll([]);
+            var normalized = CreateSettingsDocumentStore(settingsPath);
+            Assert.Empty(Assert.Single(normalized.GetCommands()).RequestTemplateId);
+        }
+        finally
+        {
+            if (Directory.Exists(directory))
+            {
+                Directory.Delete(directory, recursive: true);
+            }
+        }
+    }
+
+    [Fact]
     public void SettingsFileLauncher_ResolvesVirtualizedLocalAppDataForShellProcesses()
     {
         var resolvedPath = SettingsFileLauncher.GetShellVisiblePath(
@@ -2144,14 +2599,18 @@ public sealed class UserCommandsTests
 
         public List<string> RequestArguments { get; } = [];
 
+        public List<string> TemplateRequestArguments { get; } = [];
+
         public Task<IReadOnlyList<string>> CompleteAsync(
             string prompt,
             string? systemPrompt,
+            string templateRequestArguments,
             string customRequestArguments,
             CancellationToken cancellationToken)
         {
             Prompts.Add(prompt);
             SystemPrompts.Add(systemPrompt);
+            TemplateRequestArguments.Add(templateRequestArguments);
             RequestArguments.Add(customRequestArguments);
             return Task.FromResult<IReadOnlyList<string>>([response]);
         }
@@ -2164,6 +2623,7 @@ public sealed class UserCommandsTests
         public Task<IReadOnlyList<string>> CompleteAsync(
             string prompt,
             string? systemPrompt,
+            string templateRequestArguments,
             string customRequestArguments,
             CancellationToken cancellationToken)
         {
@@ -2213,6 +2673,7 @@ public sealed class UserCommandsTests
         public async Task<IReadOnlyList<string>> CompleteAsync(
             string prompt,
             string? systemPrompt,
+            string templateRequestArguments,
             string customRequestArguments,
             CancellationToken cancellationToken)
         {

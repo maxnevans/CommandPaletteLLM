@@ -11,6 +11,7 @@ public partial class CommandPaletteLLMCommandsProvider : CommandProvider
 {
     private readonly UserCommandStore _store;
     private readonly LlmProviderSettingsStore _providerSettingsStore;
+    private readonly JsonRequestTemplateStore _requestTemplateStore;
     private readonly GlobalSettingsStore _globalSettingsStore;
     private readonly ILlmClient? _llmClientOverride;
     private readonly ILlmEndpointMonitor? _endpointMonitorOverride;
@@ -30,7 +31,8 @@ public partial class CommandPaletteLLMCommandsProvider : CommandProvider
         : this(
             new UserCommandStore(settingsDocumentStore),
             new LlmProviderSettingsStore(settingsDocumentStore),
-            new GlobalSettingsStore(settingsDocumentStore))
+            new GlobalSettingsStore(settingsDocumentStore),
+            new JsonRequestTemplateStore(settingsDocumentStore))
     {
     }
 
@@ -39,6 +41,7 @@ public partial class CommandPaletteLLMCommandsProvider : CommandProvider
             store,
             new LlmProviderSettingsStore(filePath: null),
             new GlobalSettingsStore(filePath: null),
+            new JsonRequestTemplateStore(),
             endpointMonitor: new AssumedAvailableEndpointMonitor())
     {
     }
@@ -52,6 +55,7 @@ public partial class CommandPaletteLLMCommandsProvider : CommandProvider
             store,
             providerSettingsStore,
             new GlobalSettingsStore(filePath: null),
+            new JsonRequestTemplateStore(),
             llmClient,
             endpointMonitor)
     {
@@ -63,10 +67,28 @@ public partial class CommandPaletteLLMCommandsProvider : CommandProvider
         GlobalSettingsStore globalSettingsStore,
         ILlmClient? llmClient = null,
         ILlmEndpointMonitor? endpointMonitor = null)
+        : this(
+            store,
+            providerSettingsStore,
+            globalSettingsStore,
+            new JsonRequestTemplateStore(),
+            llmClient,
+            endpointMonitor)
+    {
+    }
+
+    internal CommandPaletteLLMCommandsProvider(
+        UserCommandStore store,
+        LlmProviderSettingsStore providerSettingsStore,
+        GlobalSettingsStore globalSettingsStore,
+        JsonRequestTemplateStore requestTemplateStore,
+        ILlmClient? llmClient = null,
+        ILlmEndpointMonitor? endpointMonitor = null)
     {
         _store = store;
         _providerSettingsStore = providerSettingsStore;
         _globalSettingsStore = globalSettingsStore;
+        _requestTemplateStore = requestTemplateStore;
         _llmClientOverride = llmClient;
         _endpointMonitorOverride = endpointMonitor ?? (llmClient is null
             ? null
@@ -78,9 +100,11 @@ public partial class CommandPaletteLLMCommandsProvider : CommandProvider
             _store,
             _providerSettingsStore,
             _globalSettingsStore,
+            _requestTemplateStore,
             ReloadCommands,
             ReloadCommands,
-            ProviderSettingsChanged);
+            ProviderSettingsChanged,
+            ReloadCommands);
         ReloadCommands(raiseItemsChanged: false);
         CheckProviderConnections();
     }
@@ -109,12 +133,14 @@ public partial class CommandPaletteLLMCommandsProvider : CommandProvider
             .Select(definition =>
             {
                 var runtime = GetProviderRuntime(definition.ProviderId);
+                var templateArguments = GetTemplateArguments(definition);
                 return new FormattedCommandPage(
                     definition,
                     runtime.Client,
                     pageAccessed: CommandPageAccessed,
                     endpointMonitor: runtime.Monitor,
-                    advancedOutputSystemPrompt: advancedOutputSystemPrompt);
+                    advancedOutputSystemPrompt: advancedOutputSystemPrompt,
+                    templateRequestArguments: templateArguments);
             })
             .ToArray();
         _commands = _commandPages
@@ -128,13 +154,15 @@ public partial class CommandPaletteLLMCommandsProvider : CommandProvider
             .Select(definition =>
             {
                 var runtime = GetProviderRuntime(definition.ProviderId);
+                var templateArguments = GetTemplateArguments(definition);
                 return new FormattedFallbackItem(
                     definition,
                     runtime.Client,
                     isTopLevelCommandQuery: query => commandNames.Contains(query.Trim()),
                     rootQueryObserved: RootQueryObserved,
                     endpointMonitor: runtime.Monitor,
-                    advancedOutputSystemPrompt: advancedOutputSystemPrompt);
+                    advancedOutputSystemPrompt: advancedOutputSystemPrompt,
+                    templateRequestArguments: templateArguments);
             })
             .ToArray();
         _fallbackCommands = _formattedFallbackItems
@@ -147,6 +175,22 @@ public partial class CommandPaletteLLMCommandsProvider : CommandProvider
         }
 
         CheckProviderConnections();
+    }
+
+    private string GetTemplateArguments(UserCommandDefinition definition)
+    {
+        if (string.IsNullOrEmpty(definition.RequestTemplateId))
+        {
+            return string.Empty;
+        }
+
+        var template = _requestTemplateStore.Get(definition.RequestTemplateId);
+        return template is not null && string.Equals(
+            template.ProviderId,
+            definition.ProviderId,
+            StringComparison.Ordinal)
+                ? template.RequestArguments
+                : string.Empty;
     }
 
     private void CancelFallbackRequests()

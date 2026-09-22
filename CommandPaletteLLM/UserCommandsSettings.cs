@@ -9,17 +9,21 @@ internal sealed partial class UserCommandsSettings : ICommandSettings
         UserCommandStore store,
         LlmProviderSettingsStore providerSettingsStore,
         GlobalSettingsStore globalSettingsStore,
+        JsonRequestTemplateStore requestTemplateStore,
         Action commandsChanged,
         Action globalSettingsChanged,
-        Action providerSettingsChanged)
+        Action providerSettingsChanged,
+        Action requestTemplatesChanged)
     {
         SettingsPage = new UserCommandsSettingsPage(
             store,
             providerSettingsStore,
             globalSettingsStore,
+            requestTemplateStore,
             commandsChanged,
             globalSettingsChanged,
-            providerSettingsChanged);
+            providerSettingsChanged,
+            requestTemplatesChanged);
     }
 
     public IContentPage SettingsPage { get; }

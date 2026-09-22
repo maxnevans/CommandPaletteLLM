@@ -11,6 +11,8 @@ internal sealed class SettingsDocument
 
     public List<StoredLlmProviderSettings> Providers { get; set; } = [];
 
+    public List<JsonRequestTemplateDefinition> JsonRequestTemplates { get; set; } = [];
+
     public List<UserCommandDefinition> Commands { get; set; } = [];
 }
 

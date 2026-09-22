@@ -28,6 +28,8 @@ internal sealed class UserCommandDefinition
 
     public string ProviderId { get; set; } = "default";
 
+    public string RequestTemplateId { get; set; } = string.Empty;
+
     public CommandExposure Exposure { get; set; }
 
     public string IconPath { get; set; } = string.Empty;
@@ -50,6 +52,7 @@ internal sealed class UserCommandDefinition
         EnableAdvancedOutput = EnableAdvancedOutput,
         UseGlobalAdvancedOutputSystemPrompt = UseGlobalAdvancedOutputSystemPrompt,
         ProviderId = ProviderId,
+        RequestTemplateId = RequestTemplateId,
         Exposure = Exposure,
         IconPath = IconPath,
         EnableGlobalFallback = EnableGlobalFallback,

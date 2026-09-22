@@ -9,6 +9,7 @@ internal interface ILlmClient
     Task<IReadOnlyList<string>> CompleteAsync(
         string prompt,
         string? systemPrompt,
+        string templateRequestArguments,
         string customRequestArguments,
         CancellationToken cancellationToken);
 }

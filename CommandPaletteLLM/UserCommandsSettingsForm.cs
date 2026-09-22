@@ -15,14 +15,17 @@ internal sealed partial class UserCommandsSettingsForm : FormContent
 {
     private readonly UserCommandStore _store;
     private readonly LlmProviderSettingsStore _providerSettingsStore;
+    private readonly JsonRequestTemplateStore _requestTemplateStore;
     private readonly GlobalSettingsStore _globalSettingsStore;
     private readonly Action _commandsChanged;
     private readonly Action _globalSettingsChanged;
     private readonly Action _providerSettingsChanged;
+    private readonly Action _requestTemplatesChanged;
     private readonly CommandIconStore _iconStore;
     private readonly ISettingsFileLauncher _settingsFileLauncher;
     private readonly HashSet<string> _expandedCommandIds = new(StringComparer.Ordinal);
     private readonly HashSet<string> _expandedProviderIds = new(StringComparer.Ordinal);
+    private readonly HashSet<string> _expandedRequestTemplateIds = new(StringComparer.Ordinal);
     private readonly JsonObject _draftInputs = [];
     private bool _globalSettingsExpanded;
 
@@ -37,9 +40,11 @@ internal sealed partial class UserCommandsSettingsForm : FormContent
             store,
             providerSettingsStore,
             globalSettingsStore,
+            new JsonRequestTemplateStore(),
             commandsChanged,
             globalSettingsChanged,
             providerSettingsChanged,
+            () => { },
             new SettingsFileLauncher())
     {
     }
@@ -52,13 +57,60 @@ internal sealed partial class UserCommandsSettingsForm : FormContent
         Action globalSettingsChanged,
         Action providerSettingsChanged,
         ISettingsFileLauncher settingsFileLauncher)
+        : this(
+            store,
+            providerSettingsStore,
+            globalSettingsStore,
+            new JsonRequestTemplateStore(),
+            commandsChanged,
+            globalSettingsChanged,
+            providerSettingsChanged,
+            () => { },
+            settingsFileLauncher)
+    {
+    }
+
+    public UserCommandsSettingsForm(
+        UserCommandStore store,
+        LlmProviderSettingsStore providerSettingsStore,
+        GlobalSettingsStore globalSettingsStore,
+        JsonRequestTemplateStore requestTemplateStore,
+        Action commandsChanged,
+        Action globalSettingsChanged,
+        Action providerSettingsChanged,
+        Action requestTemplatesChanged)
+        : this(
+            store,
+            providerSettingsStore,
+            globalSettingsStore,
+            requestTemplateStore,
+            commandsChanged,
+            globalSettingsChanged,
+            providerSettingsChanged,
+            requestTemplatesChanged,
+            new SettingsFileLauncher())
+    {
+    }
+
+    internal UserCommandsSettingsForm(
+        UserCommandStore store,
+        LlmProviderSettingsStore providerSettingsStore,
+        GlobalSettingsStore globalSettingsStore,
+        JsonRequestTemplateStore requestTemplateStore,
+        Action commandsChanged,
+        Action globalSettingsChanged,
+        Action providerSettingsChanged,
+        Action requestTemplatesChanged,
+        ISettingsFileLauncher settingsFileLauncher)
     {
         _store = store;
         _providerSettingsStore = providerSettingsStore;
         _globalSettingsStore = globalSettingsStore;
+        _requestTemplateStore = requestTemplateStore;
         _commandsChanged = commandsChanged;
         _globalSettingsChanged = globalSettingsChanged;
         _providerSettingsChanged = providerSettingsChanged;
+        _requestTemplatesChanged = requestTemplatesChanged;
         _settingsFileLauncher = settingsFileLauncher;
         _iconStore = new CommandIconStore(store.StorageDirectory);
         Refresh();
@@ -176,6 +228,22 @@ internal sealed partial class UserCommandsSettingsForm : FormContent
                 return SetProviderEditorVisibility(actionId[cancelProviderPrefix.Length..], isExpanded: false);
             }
 
+            const string editRequestTemplatePrefix = "edit-request-template:";
+            if (actionId?.StartsWith(editRequestTemplatePrefix, StringComparison.Ordinal) == true)
+            {
+                return SetRequestTemplateEditorVisibility(
+                    actionId[editRequestTemplatePrefix.Length..],
+                    isExpanded: true);
+            }
+
+            const string cancelRequestTemplatePrefix = "cancel-request-template:";
+            if (actionId?.StartsWith(cancelRequestTemplatePrefix, StringComparison.Ordinal) == true)
+            {
+                return SetRequestTemplateEditorVisibility(
+                    actionId[cancelRequestTemplatePrefix.Length..],
+                    isExpanded: false);
+            }
+
             if (string.Equals(actionId, "add", StringComparison.Ordinal))
             {
                 return Add(input);
@@ -184,6 +252,11 @@ internal sealed partial class UserCommandsSettingsForm : FormContent
             if (string.Equals(actionId, "add-provider", StringComparison.Ordinal))
             {
                 return AddProvider(input);
+            }
+
+            if (string.Equals(actionId, "add-request-template", StringComparison.Ordinal))
+            {
+                return AddRequestTemplate(input);
             }
 
             const string saveProviderPrefix = "save-provider:";
@@ -204,6 +277,18 @@ internal sealed partial class UserCommandsSettingsForm : FormContent
                 return DeleteProvider(actionId[deleteProviderPrefix.Length..]);
             }
 
+            const string saveRequestTemplatePrefix = "save-request-template:";
+            if (actionId?.StartsWith(saveRequestTemplatePrefix, StringComparison.Ordinal) == true)
+            {
+                return SaveRequestTemplate(input, actionId[saveRequestTemplatePrefix.Length..]);
+            }
+
+            const string deleteRequestTemplatePrefix = "delete-request-template:";
+            if (actionId?.StartsWith(deleteRequestTemplatePrefix, StringComparison.Ordinal) == true)
+            {
+                return DeleteRequestTemplate(actionId[deleteRequestTemplatePrefix.Length..]);
+            }
+
             if (string.Equals(actionId, "save-provider", StringComparison.Ordinal))
             {
                 return SaveLegacyProvider(input);
@@ -213,6 +298,12 @@ internal sealed partial class UserCommandsSettingsForm : FormContent
             if (actionId?.StartsWith(savePrefix, StringComparison.Ordinal) == true)
             {
                 return Save(input, actionId[savePrefix.Length..]);
+            }
+
+            const string applyProviderPrefix = "apply-provider:";
+            if (actionId?.StartsWith(applyProviderPrefix, StringComparison.Ordinal) == true)
+            {
+                return ApplyCommandProvider(input, actionId[applyProviderPrefix.Length..]);
             }
 
             const string pickIconPrefix = "pick-icon:";
@@ -342,11 +433,14 @@ internal sealed partial class UserCommandsSettingsForm : FormContent
         _draftInputs.Clear();
         _expandedCommandIds.Clear();
         _expandedProviderIds.Clear();
+        _expandedRequestTemplateIds.Clear();
         _globalSettingsExpanded = false;
         _store.ReloadFromDocument();
         _providerSettingsStore.ReloadFromDocument();
+        _requestTemplateStore.ReloadFromDocument();
         _globalSettingsStore.ReloadFromDocument();
         _providerSettingsChanged();
+        _requestTemplatesChanged();
         _commandsChanged();
         Refresh();
     }
@@ -384,6 +478,118 @@ internal sealed partial class UserCommandsSettingsForm : FormContent
 
         _draftInputs.Remove("newProviderName");
         return ValidateAndSaveProviders(providers);
+    }
+
+    private CommandResult AddRequestTemplate(JsonObject input)
+    {
+        var templates = _requestTemplateStore.GetTemplates()
+            .Select(template => template.Clone())
+            .ToList();
+        templates.Add(new JsonRequestTemplateDefinition
+        {
+            Id = Guid.NewGuid().ToString("N"),
+            Name = ReadText(input, "newRequestTemplateName"),
+            ProviderId = _providerSettingsStore.Get().Id,
+            RequestArguments = "{}",
+        });
+
+        _draftInputs.Remove("newRequestTemplateName");
+        return ValidateAndSaveRequestTemplates(templates);
+    }
+
+    private CommandResult SaveRequestTemplate(JsonObject input, string templateId)
+    {
+        var templates = _requestTemplateStore.GetTemplates()
+            .Select(template => template.Clone())
+            .ToList();
+        var template = templates.FirstOrDefault(item =>
+            string.Equals(item.Id, templateId, StringComparison.Ordinal));
+        if (template is null)
+        {
+            return ShowError("The JSON request template no longer exists.");
+        }
+
+        template.Name = ReadText(
+            input,
+            $"requestTemplateName_{template.Id}",
+            template.Name);
+        template.ProviderId = ReadText(
+            input,
+            $"requestTemplateProvider_{template.Id}",
+            template.ProviderId);
+        template.RequestArguments = ReadText(
+            input,
+            $"requestTemplateArguments_{template.Id}",
+            template.RequestArguments);
+
+        var commands = _store.GetCommands().Select(command => command.Clone()).ToList();
+        foreach (var command in commands.Where(command =>
+            string.Equals(command.RequestTemplateId, template.Id, StringComparison.Ordinal) &&
+            !string.Equals(command.ProviderId, template.ProviderId, StringComparison.Ordinal)))
+        {
+            command.RequestTemplateId = string.Empty;
+        }
+
+        return ValidateAndSaveRequestTemplates(templates, commands, template.Id);
+    }
+
+    private CommandResult DeleteRequestTemplate(string templateId)
+    {
+        var existingTemplates = _requestTemplateStore.GetTemplates();
+        var templates = existingTemplates
+            .Where(template => !string.Equals(template.Id, templateId, StringComparison.Ordinal))
+            .ToArray();
+        if (templates.Length == existingTemplates.Count)
+        {
+            return ShowError("The JSON request template no longer exists.");
+        }
+
+        var commands = _store.GetCommands().Select(command => command.Clone()).ToList();
+        foreach (var command in commands.Where(command =>
+            string.Equals(command.RequestTemplateId, templateId, StringComparison.Ordinal)))
+        {
+            command.RequestTemplateId = string.Empty;
+        }
+
+        _requestTemplateStore.ReplaceAll(templates);
+        _store.ReplaceAll(commands);
+        _expandedRequestTemplateIds.Remove(templateId);
+        RemoveDraftInputsForRequestTemplate(templateId);
+        _requestTemplatesChanged();
+        _commandsChanged();
+        Refresh();
+        return CommandResult.KeepOpen();
+    }
+
+    private CommandResult ValidateAndSaveRequestTemplates(
+        List<JsonRequestTemplateDefinition> templates,
+        List<UserCommandDefinition>? commands = null,
+        string? savedTemplateId = null)
+    {
+        var validationError = ValidateRequestTemplates(
+            templates,
+            _providerSettingsStore.GetProviders());
+        if (validationError is not null)
+        {
+            return ShowError(validationError);
+        }
+
+        _requestTemplateStore.ReplaceAll(templates);
+        if (commands is not null)
+        {
+            _store.ReplaceAll(commands);
+            _commandsChanged();
+        }
+
+        if (savedTemplateId is not null)
+        {
+            _expandedRequestTemplateIds.Remove(savedTemplateId);
+            RemoveDraftInputsForRequestTemplate(savedTemplateId);
+        }
+
+        _requestTemplatesChanged();
+        Refresh();
+        return CommandResult.KeepOpen();
     }
 
     private CommandResult SaveProvider(JsonObject input, string providerId)
@@ -469,9 +675,12 @@ internal sealed partial class UserCommandsSettingsForm : FormContent
 
         _providerSettingsStore.ReplaceAll(providers.Where(provider =>
             !string.Equals(provider.Id, providerId, StringComparison.Ordinal)));
+        _requestTemplateStore.ReplaceAll(_requestTemplateStore.GetTemplates().Where(template =>
+            !string.Equals(template.ProviderId, providerId, StringComparison.Ordinal)));
         _expandedProviderIds.Remove(providerId);
         RemoveDraftInputsForProvider(providerId);
         _providerSettingsChanged();
+        _requestTemplatesChanged();
         Refresh();
         return CommandResult.KeepOpen();
     }
@@ -555,6 +764,21 @@ internal sealed partial class UserCommandsSettingsForm : FormContent
             return ShowError($"Command '{command.Name}' must use an existing LLM provider.");
         }
 
+        var requestTemplateKey = $"requestTemplate_{command.Id}";
+        var requestTemplateId = ReadText(
+            input,
+            requestTemplateKey,
+            command.RequestTemplateId);
+        var requestTemplate = string.IsNullOrEmpty(requestTemplateId)
+            ? null
+            : _requestTemplateStore.Get(requestTemplateId);
+        command.RequestTemplateId = requestTemplate is not null && string.Equals(
+            requestTemplate.ProviderId,
+            command.ProviderId,
+            StringComparison.Ordinal)
+                ? requestTemplate.Id
+                : string.Empty;
+
         var fallbackKey = $"fallback_{command.Id}";
         if (input[fallbackKey] is not null)
         {
@@ -591,6 +815,42 @@ internal sealed partial class UserCommandsSettingsForm : FormContent
         _expandedCommandIds.Remove(commandId);
         RemoveDraftInputsForCommand(commandId);
         _commandsChanged();
+        Refresh();
+        return CommandResult.KeepOpen();
+    }
+
+    private CommandResult ApplyCommandProvider(JsonObject input, string commandId)
+    {
+        var command = _store.GetCommands().FirstOrDefault(command =>
+            string.Equals(command.Id, commandId, StringComparison.Ordinal));
+        if (command is null)
+        {
+            return ShowError("The command no longer exists.");
+        }
+
+        var providerId = ReadText(input, $"provider_{command.Id}", command.ProviderId);
+        if (_providerSettingsStore.Get(providerId) is null)
+        {
+            return ShowError($"Command '{command.Name}' must use an existing LLM provider.");
+        }
+
+        var requestTemplateKey = $"requestTemplate_{command.Id}";
+        var requestTemplateId = ReadText(
+            input,
+            requestTemplateKey,
+            command.RequestTemplateId);
+        var requestTemplate = string.IsNullOrEmpty(requestTemplateId)
+            ? null
+            : _requestTemplateStore.Get(requestTemplateId);
+        if (requestTemplate is null || !string.Equals(
+            requestTemplate.ProviderId,
+            providerId,
+            StringComparison.Ordinal))
+        {
+            _draftInputs[requestTemplateKey] = string.Empty;
+        }
+
+        _expandedCommandIds.Add(commandId);
         Refresh();
         return CommandResult.KeepOpen();
     }
@@ -661,9 +921,11 @@ internal sealed partial class UserCommandsSettingsForm : FormContent
             _globalSettingsStore.Get(),
             _globalSettingsStore.GetFileStatus(),
             _providerSettingsStore.GetProviders(),
+            _requestTemplateStore.GetTemplates(),
             _store.GetCommands(),
             _globalSettingsExpanded,
             _expandedProviderIds,
+            _expandedRequestTemplateIds,
             _expandedCommandIds,
             _draftInputs,
             errorMessage).ToJsonString();
@@ -683,9 +945,11 @@ internal sealed partial class UserCommandsSettingsForm : FormContent
         GlobalSettings globalSettings,
         SettingsFileStatus settingsFileStatus,
         IReadOnlyList<LlmProviderSettings> providers,
+        IReadOnlyList<JsonRequestTemplateDefinition> requestTemplates,
         IReadOnlyList<UserCommandDefinition> commands,
         bool expandedGlobalSettings,
         HashSet<string> expandedProviderIds,
+        HashSet<string> expandedRequestTemplateIds,
         HashSet<string> expandedCommandIds,
         JsonObject draftInputs,
         string? errorMessage)
@@ -752,6 +1016,64 @@ internal sealed partial class UserCommandsSettingsForm : FormContent
         body.Add(new JsonObject
         {
             ["type"] = "TextBlock",
+            ["text"] = "JSON Request Templates",
+            ["size"] = "Large",
+            ["weight"] = "Bolder",
+            ["separator"] = true,
+            ["spacing"] = "ExtraLarge",
+        });
+        body.Add(new JsonObject
+        {
+            ["type"] = "TextBlock",
+            ["text"] = "Reuse provider-specific JSON request fields across commands. Command-specific request arguments override the selected template.",
+            ["wrap"] = true,
+        });
+
+        if (requestTemplates.Count == 0)
+        {
+            body.Add(new JsonObject
+            {
+                ["type"] = "TextBlock",
+                ["text"] = "No JSON request templates have been created yet.",
+                ["isSubtle"] = true,
+                ["wrap"] = true,
+            });
+        }
+
+        foreach (var requestTemplate in requestTemplates)
+        {
+            body.Add(BuildRequestTemplateEditor(
+                requestTemplate,
+                providers,
+                expandedRequestTemplateIds.Contains(requestTemplate.Id),
+                draftInputs));
+        }
+
+        body.Add(new JsonObject
+        {
+            ["type"] = "TextBlock",
+            ["text"] = "Add a JSON request template",
+            ["weight"] = "Bolder",
+            ["separator"] = true,
+        });
+        body.Add(BuildTextInput(
+            "newRequestTemplateName",
+            "Template name",
+            string.Empty,
+            "For example: Creative responses",
+            isRequired: false));
+        body.Add(new JsonObject
+        {
+            ["type"] = "ActionSet",
+            ["actions"] = new JsonArray
+            {
+                BuildSubmitAction("Add template", "add-request-template"),
+            },
+        });
+
+        body.Add(new JsonObject
+        {
+            ["type"] = "TextBlock",
             ["text"] = "Commands",
             ["size"] = "Large",
             ["weight"] = "Bolder",
@@ -781,6 +1103,7 @@ internal sealed partial class UserCommandsSettingsForm : FormContent
             body.Add(BuildCommandEditor(
                 command,
                 providers,
+                requestTemplates,
                 expandedCommandIds.Contains(command.Id),
                 draftInputs));
         }
@@ -1236,14 +1559,195 @@ internal sealed partial class UserCommandsSettingsForm : FormContent
         "Trimming",
         "IL2026",
         Justification = "The card builder adds only primitive values and explicit JsonNode instances.")]
+    private static JsonObject BuildRequestTemplateEditor(
+        JsonRequestTemplateDefinition requestTemplate,
+        IReadOnlyList<LlmProviderSettings> providers,
+        bool isExpanded,
+        JsonObject draftInputs)
+    {
+        var displayId = $"request_template_display_{requestTemplate.Id}";
+        var editorId = $"request_template_editor_{requestTemplate.Id}";
+        return new JsonObject
+        {
+            ["type"] = "Container",
+            ["style"] = "emphasis",
+            ["spacing"] = "Medium",
+            ["items"] = new JsonArray
+            {
+                new JsonObject
+                {
+                    ["type"] = "Container",
+                    ["id"] = displayId,
+                    ["isVisible"] = !isExpanded,
+                    ["items"] = new JsonArray
+                    {
+                        new JsonObject
+                        {
+                            ["type"] = "ColumnSet",
+                            ["columns"] = new JsonArray
+                            {
+                                new JsonObject
+                                {
+                                    ["type"] = "Column",
+                                    ["width"] = "stretch",
+                                    ["items"] = new JsonArray
+                                    {
+                                        new JsonObject
+                                        {
+                                            ["type"] = "TextBlock",
+                                            ["text"] = requestTemplate.Name,
+                                            ["weight"] = "Bolder",
+                                            ["wrap"] = true,
+                                        },
+                                        new JsonObject
+                                        {
+                                            ["type"] = "TextBlock",
+                                            ["text"] = GetProviderName(requestTemplate.ProviderId, providers),
+                                            ["isSubtle"] = true,
+                                            ["spacing"] = "Small",
+                                        },
+                                        new JsonObject
+                                        {
+                                            ["type"] = "TextBlock",
+                                            ["text"] = requestTemplate.RequestArguments,
+                                            ["fontType"] = "Monospace",
+                                            ["isSubtle"] = true,
+                                            ["spacing"] = "Small",
+                                            ["wrap"] = true,
+                                        },
+                                    },
+                                },
+                                new JsonObject
+                                {
+                                    ["type"] = "Column",
+                                    ["width"] = "auto",
+                                    ["verticalContentAlignment"] = "Center",
+                                    ["items"] = new JsonArray
+                                    {
+                                        new JsonObject
+                                        {
+                                            ["type"] = "ActionSet",
+                                            ["horizontalAlignment"] = "Right",
+                                            ["actions"] = new JsonArray
+                                            {
+                                                BuildSubmitAction(
+                                                    "✎",
+                                                    $"edit-request-template:{requestTemplate.Id}",
+                                                    "Edit JSON request template"),
+                                                BuildSubmitAction(
+                                                    "🗑",
+                                                    $"delete-request-template:{requestTemplate.Id}",
+                                                    "Delete JSON request template",
+                                                    associatedInputs: "none",
+                                                    style: "destructive"),
+                                            },
+                                        },
+                                    },
+                                },
+                            },
+                        },
+                    },
+                },
+                new JsonObject
+                {
+                    ["type"] = "Container",
+                    ["id"] = editorId,
+                    ["isVisible"] = isExpanded,
+                    ["items"] = new JsonArray
+                    {
+                        BuildTextInput(
+                            $"requestTemplateName_{requestTemplate.Id}",
+                            "Template name",
+                            ReadText(
+                                draftInputs,
+                                $"requestTemplateName_{requestTemplate.Id}",
+                                requestTemplate.Name),
+                            string.Empty),
+                        BuildChoiceInput(
+                            $"requestTemplateProvider_{requestTemplate.Id}",
+                            "LLM provider",
+                            ReadText(
+                                draftInputs,
+                                $"requestTemplateProvider_{requestTemplate.Id}",
+                                requestTemplate.ProviderId),
+                            providers.Select(provider => (provider.Name, provider.Id))),
+                        BuildTextInput(
+                            $"requestTemplateArguments_{requestTemplate.Id}",
+                            "JSON request object",
+                            ReadText(
+                                draftInputs,
+                                $"requestTemplateArguments_{requestTemplate.Id}",
+                                requestTemplate.RequestArguments),
+                            "{\"temperature\":0.7}",
+                            isMultiline: true),
+                        new JsonObject
+                        {
+                            ["type"] = "TextBlock",
+                            ["text"] = "Enter a static JSON object. The protected model and messages fields are not allowed.",
+                            ["isSubtle"] = true,
+                            ["wrap"] = true,
+                            ["spacing"] = "Small",
+                        },
+                        new JsonObject
+                        {
+                            ["type"] = "ActionSet",
+                            ["horizontalAlignment"] = "Right",
+                            ["actions"] = new JsonArray
+                            {
+                                BuildSubmitAction(
+                                    "✓",
+                                    $"save-request-template:{requestTemplate.Id}",
+                                    "Save JSON request template"),
+                                BuildSubmitAction(
+                                    "✕",
+                                    $"cancel-request-template:{requestTemplate.Id}",
+                                    "Cancel editing"),
+                            },
+                        },
+                    },
+                },
+            },
+        };
+    }
+
+    [UnconditionalSuppressMessage(
+        "AOT",
+        "IL3050",
+        Justification = "The card builder adds only primitive values and explicit JsonNode instances.")]
+    [UnconditionalSuppressMessage(
+        "Trimming",
+        "IL2026",
+        Justification = "The card builder adds only primitive values and explicit JsonNode instances.")]
     private static JsonObject BuildCommandEditor(
         UserCommandDefinition command,
         IReadOnlyList<LlmProviderSettings> providers,
+        IReadOnlyList<JsonRequestTemplateDefinition> requestTemplates,
         bool isExpanded,
         JsonObject draftInputs)
     {
         var displayId = $"display_{command.Id}";
         var editorId = $"editor_{command.Id}";
+        var draftProviderId = ReadText(
+            draftInputs,
+            $"provider_{command.Id}",
+            command.ProviderId);
+        var matchingTemplates = requestTemplates
+            .Where(template => string.Equals(
+                template.ProviderId,
+                draftProviderId,
+                StringComparison.Ordinal))
+            .ToArray();
+        var draftRequestTemplateId = ReadText(
+            draftInputs,
+            $"requestTemplate_{command.Id}",
+            command.RequestTemplateId);
+        if (!matchingTemplates.Any(template => string.Equals(
+            template.Id,
+            draftRequestTemplateId,
+            StringComparison.Ordinal)))
+        {
+            draftRequestTemplateId = string.Empty;
+        }
 
         return new JsonObject
         {
@@ -1289,7 +1793,7 @@ internal sealed partial class UserCommandsSettingsForm : FormContent
                                         new JsonObject
                                         {
                                             ["type"] = "TextBlock",
-                                            ["text"] = $"{GetExposureTitle(command.EffectiveExposure)} · {GetProviderName(command.ProviderId, providers)} · {command.SendDelayMilliseconds} ms{(string.IsNullOrWhiteSpace(command.CustomRequestArguments) ? string.Empty : " · Custom request arguments")}{(command.EnableAdvancedOutput ? " · Advanced output" : string.Empty)}{(command.EnableAdvancedOutput && !command.UseGlobalAdvancedOutputSystemPrompt ? " · Global prompt off" : string.Empty)}",
+                                            ["text"] = $"{GetExposureTitle(command.EffectiveExposure)} · {GetProviderName(command.ProviderId, providers)} · {GetRequestTemplateName(command.RequestTemplateId, requestTemplates)} · {command.SendDelayMilliseconds} ms{(string.IsNullOrWhiteSpace(command.CustomRequestArguments) ? string.Empty : " · Custom request arguments")}{(command.EnableAdvancedOutput ? " · Advanced output" : string.Empty)}{(command.EnableAdvancedOutput && !command.UseGlobalAdvancedOutputSystemPrompt ? " · Global prompt off" : string.Empty)}",
                                             ["isSubtle"] = true,
                                             ["spacing"] = "Small",
                                         },
@@ -1344,6 +1848,45 @@ internal sealed partial class UserCommandsSettingsForm : FormContent
                             ReadText(draftInputs, $"format_{command.Id}", command.OutputFormat),
                             "Use {} for the search term, {{ for {, and }} for }.",
                             isMultiline: true),
+                        BuildChoiceInput(
+                            $"provider_{command.Id}",
+                            "LLM provider",
+                            draftProviderId,
+                            providers.Select(provider => (provider.Name, provider.Id))),
+                        new JsonObject
+                        {
+                            ["type"] = "ActionSet",
+                            ["actions"] = new JsonArray
+                            {
+                                BuildSubmitAction(
+                                    "Apply provider",
+                                    $"apply-provider:{command.Id}",
+                                    "Refresh JSON request templates for the selected provider"),
+                            },
+                        },
+                        new JsonObject
+                        {
+                            ["type"] = "Image",
+                            ["url"] = "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAA+gAAAABCAYAAABNAIQzAAAAAXNSR0IArs4c6QAAAARnQU1BAACxjwv8YQUAAAAJcEhZcwAADsMAAA7DAcdvqGQAAAAeSURBVFhH7cNBDQAACAAho19zjeEHNqZaVVVV9fcBOgbAoIUsD+wAAAAASUVORK5CYII=",
+                            ["altText"] = "Section separator",
+                            ["width"] = "stretch",
+                            ["height"] = "1px",
+                            ["spacing"] = "Small",
+                        },
+                        new JsonObject
+                        {
+                            ["type"] = "TextBlock",
+                            ["text"] = "Select an optional reusable request object for this provider. The template supplies base values; custom request arguments below override matching values recursively. Set a matching custom value to null to omit that field from the request. The extension always controls model and messages.",
+                            ["isSubtle"] = true,
+                            ["wrap"] = true,
+                            ["spacing"] = "Small",
+                        },
+                        BuildChoiceInput(
+                            $"requestTemplate_{command.Id}",
+                            "JSON request template",
+                            draftRequestTemplateId,
+                            new[] { ("None", string.Empty) }.Concat(
+                                matchingTemplates.Select(template => (template.Name, template.Id)))),
                         BuildTextInput(
                             $"requestArguments_{command.Id}",
                             "Custom request arguments (optional)",
@@ -1379,11 +1922,6 @@ internal sealed partial class UserCommandsSettingsForm : FormContent
                             ReadInteger(draftInputs, $"delay_{command.Id}", command.SendDelayMilliseconds),
                             0,
                             10_000),
-                        BuildChoiceInput(
-                            $"provider_{command.Id}",
-                            "LLM provider",
-                            ReadText(draftInputs, $"provider_{command.Id}", command.ProviderId),
-                            providers.Select(provider => (provider.Name, provider.Id))),
                         BuildToggleInput(
                             $"fallback_{command.Id}",
                             "Enable as fallback command",
@@ -1709,6 +2247,16 @@ internal sealed partial class UserCommandsSettingsForm : FormContent
             string.Equals(provider.Id, providerId, StringComparison.Ordinal))?.Name ??
         providers[0].Name;
 
+    private static string GetRequestTemplateName(
+        string requestTemplateId,
+        IReadOnlyList<JsonRequestTemplateDefinition> requestTemplates) =>
+        string.IsNullOrEmpty(requestTemplateId)
+            ? "No request template"
+            : requestTemplates.FirstOrDefault(template => string.Equals(
+                template.Id,
+                requestTemplateId,
+                StringComparison.Ordinal))?.Name ?? "No request template";
+
     private static string GetExposureTitle(CommandExposure exposure) => exposure switch
     {
         CommandExposure.None => "Command only",
@@ -1800,6 +2348,51 @@ internal sealed partial class UserCommandsSettingsForm : FormContent
         return null;
     }
 
+    private static string? ValidateRequestTemplates(
+        IReadOnlyList<JsonRequestTemplateDefinition> templates,
+        IReadOnlyList<LlmProviderSettings> providers)
+    {
+        var providerIds = providers.Select(provider => provider.Id).ToHashSet(StringComparer.Ordinal);
+        var namesByProvider = new Dictionary<string, HashSet<string>>(StringComparer.Ordinal);
+        foreach (var template in templates)
+        {
+            template.Name = template.Name.Trim();
+            if (string.IsNullOrWhiteSpace(template.Name))
+            {
+                return "Every JSON request template must have a name.";
+            }
+
+            if (!providerIds.Contains(template.ProviderId))
+            {
+                return $"JSON request template '{template.Name}' must use an existing LLM provider.";
+            }
+
+            if (!namesByProvider.TryGetValue(template.ProviderId, out var names))
+            {
+                names = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+                namesByProvider.Add(template.ProviderId, names);
+            }
+
+            if (!names.Add(template.Name))
+            {
+                return $"JSON request template names must be unique per provider. '{template.Name}' is used more than once.";
+            }
+
+            if (!CustomRequestArguments.TryParse(
+                template.RequestArguments,
+                out var arguments,
+                out var argumentsError,
+                "Template request arguments"))
+            {
+                return $"JSON request template '{template.Name}': {argumentsError}";
+            }
+
+            arguments?.Dispose();
+        }
+
+        return null;
+    }
+
     private CommandResult SetCommandEditorVisibility(string commandId, bool isExpanded)
     {
         if (!_store.GetCommands().Any(command =>
@@ -1843,6 +2436,29 @@ internal sealed partial class UserCommandsSettingsForm : FormContent
         return CommandResult.KeepOpen();
     }
 
+    private CommandResult SetRequestTemplateEditorVisibility(
+        string templateId,
+        bool isExpanded)
+    {
+        if (_requestTemplateStore.Get(templateId) is null)
+        {
+            return ShowError("The JSON request template no longer exists.");
+        }
+
+        if (isExpanded)
+        {
+            _expandedRequestTemplateIds.Add(templateId);
+        }
+        else
+        {
+            _expandedRequestTemplateIds.Remove(templateId);
+            RemoveDraftInputsForRequestTemplate(templateId);
+        }
+
+        Refresh();
+        return CommandResult.KeepOpen();
+    }
+
     private void CaptureDraftInputs(JsonObject input)
     {
         foreach (var property in input)
@@ -1863,6 +2479,7 @@ internal sealed partial class UserCommandsSettingsForm : FormContent
         RemoveDraftInput($"globalAdvancedOutputPrompt_{commandId}");
         RemoveDraftInput($"delay_{commandId}");
         RemoveDraftInput($"provider_{commandId}");
+        RemoveDraftInput($"requestTemplate_{commandId}");
         RemoveDraftInput($"fallback_{commandId}");
         RemoveDraftInput($"icon_{commandId}");
     }
@@ -1873,6 +2490,13 @@ internal sealed partial class UserCommandsSettingsForm : FormContent
         RemoveDraftInput($"providerBaseUrl_{providerId}");
         RemoveDraftInput($"providerModel_{providerId}");
         RemoveDraftInput($"providerApiKey_{providerId}");
+    }
+
+    private void RemoveDraftInputsForRequestTemplate(string templateId)
+    {
+        RemoveDraftInput($"requestTemplateName_{templateId}");
+        RemoveDraftInput($"requestTemplateProvider_{templateId}");
+        RemoveDraftInput($"requestTemplateArguments_{templateId}");
     }
 
     private void RemoveDraftInput(string key) => _draftInputs.Remove(key);
