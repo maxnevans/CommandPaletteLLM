@@ -24,6 +24,8 @@ internal sealed class UserCommandDefinition
 
     public bool EnableAdvancedOutput { get; set; }
 
+    public bool UseGlobalAdvancedOutputSystemPrompt { get; set; } = true;
+
     public string ProviderId { get; set; } = "default";
 
     public CommandExposure Exposure { get; set; }
@@ -46,6 +48,7 @@ internal sealed class UserCommandDefinition
         SendDelayMilliseconds = SendDelayMilliseconds,
         CustomRequestArguments = CustomRequestArguments,
         EnableAdvancedOutput = EnableAdvancedOutput,
+        UseGlobalAdvancedOutputSystemPrompt = UseGlobalAdvancedOutputSystemPrompt,
         ProviderId = ProviderId,
         Exposure = Exposure,
         IconPath = IconPath,

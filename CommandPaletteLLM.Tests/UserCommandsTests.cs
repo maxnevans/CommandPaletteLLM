@@ -46,6 +46,7 @@ public sealed class UserCommandsTests
         Assert.Equal(650, definition.SendDelayMilliseconds);
         Assert.Empty(definition.CustomRequestArguments);
         Assert.False(definition.EnableAdvancedOutput);
+        Assert.True(definition.UseGlobalAdvancedOutputSystemPrompt);
         Assert.Equal(CommandExposure.FallbackCommand, definition.Exposure);
         Assert.True(definition.EnableGlobalFallback);
         Assert.Equal("default", definition.ProviderId);
@@ -71,7 +72,7 @@ public sealed class UserCommandsTests
         var form = GetSettingsForm(provider);
 
         form.SubmitForm(
-            """{"name_stable-id":"Welcome","format_stable-id":"Welcome, {}.","requestArguments_stable-id":"{\"temperature\":0.4}","advancedOutput_stable-id":"true","delay_stable-id":125}""",
+            """{"name_stable-id":"Welcome","format_stable-id":"Welcome, {}.","requestArguments_stable-id":"{\"temperature\":0.4}","advancedOutput_stable-id":"true","globalAdvancedOutputPrompt_stable-id":"false","delay_stable-id":125}""",
             """{"actionId":"save:stable-id"}""");
 
         Assert.Equal(originalCommandId, Assert.Single(provider.TopLevelCommands()).Command.Id);
@@ -82,6 +83,7 @@ public sealed class UserCommandsTests
             """{"temperature":0.4}""",
             Assert.Single(store.GetCommands()).CustomRequestArguments);
         Assert.True(Assert.Single(store.GetCommands()).EnableAdvancedOutput);
+        Assert.False(Assert.Single(store.GetCommands()).UseGlobalAdvancedOutputSystemPrompt);
     }
 
     [Fact]
@@ -418,6 +420,10 @@ public sealed class UserCommandsTests
         Assert.Contains("Custom request arguments (optional)", form.TemplateJson, StringComparison.Ordinal);
         Assert.DoesNotContain("Response variations", form.TemplateJson, StringComparison.Ordinal);
         Assert.Contains("Enable advanced output format", form.TemplateJson, StringComparison.Ordinal);
+        Assert.Contains("Use global system prompt for advanced output", form.TemplateJson, StringComparison.Ordinal);
+        Assert.Contains("configured in Global settings", form.TemplateJson, StringComparison.Ordinal);
+        Assert.Contains("included directly in Prompt format", form.TemplateJson, StringComparison.Ordinal);
+        Assert.Contains("\"id\":\"globalAdvancedOutputPrompt_stable-id\"", form.TemplateJson, StringComparison.Ordinal);
         Assert.Contains("\"type\":\"RichTextBlock\"", form.TemplateJson, StringComparison.Ordinal);
         Assert.Contains("\"type\":\"Action.ToggleVisibility\"", form.TemplateJson, StringComparison.Ordinal);
         Assert.Contains("JSON result object or ordered array with optional title, subtitle, details, section, and tags fields", form.TemplateJson, StringComparison.Ordinal);
@@ -826,6 +832,37 @@ public sealed class UserCommandsTests
         page.SearchText = "query";
 
         Assert.Null(Assert.Single(client.SystemPrompts));
+    }
+
+    [Fact]
+    public void AdvancedCommand_CanDisableGlobalSystemPromptForPageAndFallback()
+    {
+        var definition = new UserCommandDefinition
+        {
+            Id = "advanced",
+            Name = "Advanced",
+            OutputFormat = "{}",
+            EnableAdvancedOutput = true,
+            UseGlobalAdvancedOutputSystemPrompt = false,
+        };
+        var pageClient = new RecordingLlmClient("{\"title\":\"Answer\"}");
+        var page = new FormattedCommandPage(
+            definition,
+            pageClient,
+            TimeSpan.Zero,
+            advancedOutputSystemPrompt: "Shared global instruction");
+        var fallbackClient = new RecordingLlmClient("{\"title\":\"Answer\"}");
+        var fallback = new FormattedFallbackItem(
+            definition,
+            fallbackClient,
+            TimeSpan.Zero,
+            advancedOutputSystemPrompt: "Shared global instruction");
+
+        page.SearchText = "page query";
+        fallback.FallbackHandler!.UpdateQuery("fallback query");
+
+        Assert.Null(Assert.Single(pageClient.SystemPrompts));
+        Assert.Null(Assert.Single(fallbackClient.SystemPrompts));
     }
 
     [Fact]
@@ -1685,7 +1722,8 @@ public sealed class UserCommandsTests
                 enableAdvancedOutput: true,
                 enableGlobalFallback: false,
                 exposure: CommandExposure.Unspecified,
-                customRequestArguments: """{"chat_template_kwargs":{"enable_thinking":true}}""");
+                customRequestArguments: """{"chat_template_kwargs":{"enable_thinking":true}}""",
+                useGlobalAdvancedOutputSystemPrompt: false);
 
             var reloaded = new UserCommandStore(filePath);
 
@@ -1698,6 +1736,7 @@ public sealed class UserCommandsTests
                 """{"chat_template_kwargs":{"enable_thinking":true}}""",
                 command.CustomRequestArguments);
             Assert.True(command.EnableAdvancedOutput);
+            Assert.False(command.UseGlobalAdvancedOutputSystemPrompt);
             Assert.False(command.EnableGlobalFallback);
             Assert.Equal(CommandExposure.None, command.EffectiveExposure);
             Assert.Equal("default", command.ProviderId);
@@ -1870,6 +1909,7 @@ public sealed class UserCommandsTests
 
             Assert.True(command.EnableGlobalFallback);
             Assert.False(command.EnableAdvancedOutput);
+            Assert.True(command.UseGlobalAdvancedOutputSystemPrompt);
             Assert.Equal(CommandExposure.FallbackCommand, command.EffectiveExposure);
         }
         finally
@@ -1981,7 +2021,8 @@ public sealed class UserCommandsTests
         bool enableAdvancedOutput = false,
         bool enableGlobalFallback = true,
         CommandExposure exposure = CommandExposure.FallbackCommand,
-        string customRequestArguments = "")
+        string customRequestArguments = "",
+        bool useGlobalAdvancedOutputSystemPrompt = true)
     {
         var commands = store.GetCommands().Select(command => command.Clone()).ToList();
         commands.Add(new UserCommandDefinition
@@ -1992,6 +2033,7 @@ public sealed class UserCommandsTests
             SendDelayMilliseconds = sendDelayMilliseconds,
             CustomRequestArguments = customRequestArguments,
             EnableAdvancedOutput = enableAdvancedOutput,
+            UseGlobalAdvancedOutputSystemPrompt = useGlobalAdvancedOutputSystemPrompt,
             Exposure = exposure,
             EnableGlobalFallback = exposure == CommandExposure.Unspecified
                 ? enableGlobalFallback

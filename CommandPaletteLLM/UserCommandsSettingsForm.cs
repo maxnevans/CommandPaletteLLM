@@ -361,6 +361,7 @@ internal sealed partial class UserCommandsSettingsForm : FormContent
             OutputFormat = "{}",
             SendDelayMilliseconds = 650,
             EnableAdvancedOutput = false,
+            UseGlobalAdvancedOutputSystemPrompt = true,
             ProviderId = _providerSettingsStore.Get().Id,
             Exposure = CommandExposure.FallbackCommand,
             EnableGlobalFallback = true,
@@ -526,6 +527,14 @@ internal sealed partial class UserCommandsSettingsForm : FormContent
         if (input[advancedOutputKey] is not null)
         {
             command.EnableAdvancedOutput = ReadBoolean(input, advancedOutputKey);
+        }
+
+        var globalAdvancedOutputPromptKey = $"globalAdvancedOutputPrompt_{command.Id}";
+        if (input[globalAdvancedOutputPromptKey] is not null)
+        {
+            command.UseGlobalAdvancedOutputSystemPrompt = ReadBoolean(
+                input,
+                globalAdvancedOutputPromptKey);
         }
 
         var delayKey = $"delay_{command.Id}";
@@ -1280,7 +1289,7 @@ internal sealed partial class UserCommandsSettingsForm : FormContent
                                         new JsonObject
                                         {
                                             ["type"] = "TextBlock",
-                                            ["text"] = $"{GetExposureTitle(command.EffectiveExposure)} · {GetProviderName(command.ProviderId, providers)} · {command.SendDelayMilliseconds} ms{(string.IsNullOrWhiteSpace(command.CustomRequestArguments) ? string.Empty : " · Custom request arguments")}{(command.EnableAdvancedOutput ? " · Advanced output" : string.Empty)}",
+                                            ["text"] = $"{GetExposureTitle(command.EffectiveExposure)} · {GetProviderName(command.ProviderId, providers)} · {command.SendDelayMilliseconds} ms{(string.IsNullOrWhiteSpace(command.CustomRequestArguments) ? string.Empty : " · Custom request arguments")}{(command.EnableAdvancedOutput ? " · Advanced output" : string.Empty)}{(command.EnableAdvancedOutput && !command.UseGlobalAdvancedOutputSystemPrompt ? " · Global prompt off" : string.Empty)}",
                                             ["isSubtle"] = true,
                                             ["spacing"] = "Small",
                                         },
@@ -1358,7 +1367,12 @@ internal sealed partial class UserCommandsSettingsForm : FormContent
                             ReadBoolean(
                                 draftInputs,
                                 $"advancedOutput_{command.Id}",
-                                command.EnableAdvancedOutput)),
+                                command.EnableAdvancedOutput),
+                            $"globalAdvancedOutputPrompt_{command.Id}",
+                            ReadBoolean(
+                                draftInputs,
+                                $"globalAdvancedOutputPrompt_{command.Id}",
+                                command.UseGlobalAdvancedOutputSystemPrompt)),
                         BuildNumberInput(
                             $"delay_{command.Id}",
                             "Send delay (milliseconds)",
@@ -1565,7 +1579,11 @@ internal sealed partial class UserCommandsSettingsForm : FormContent
         "Trimming",
         "IL2026",
         Justification = "The help card adds only primitive values and explicit JsonNode instances.")]
-    private static JsonObject BuildAdvancedOutputInput(string id, bool value)
+    private static JsonObject BuildAdvancedOutputInput(
+        string id,
+        bool value,
+        string globalPromptId,
+        bool useGlobalPrompt)
     {
         var helpId = $"{id}_help";
         return new JsonObject
@@ -1573,6 +1591,13 @@ internal sealed partial class UserCommandsSettingsForm : FormContent
             ["type"] = "Container",
             ["items"] = new JsonArray
             {
+                new JsonObject
+                {
+                    ["type"] = "TextBlock",
+                    ["text"] = "Advanced output turns the model response into structured Command Palette results. When advanced output and the switch below are enabled, this command receives the advanced output system prompt configured in Global settings. Turn the switch off when the regular command prompt already tells the model to return the required JSON; if needed, system-style instructions can be included directly in Prompt format.",
+                    ["isSubtle"] = true,
+                    ["wrap"] = true,
+                },
                 new JsonObject
                 {
                     ["type"] = "ColumnSet",
@@ -1620,6 +1645,10 @@ internal sealed partial class UserCommandsSettingsForm : FormContent
                         },
                     },
                 },
+                BuildToggleInput(
+                    globalPromptId,
+                    "Use global system prompt for advanced output",
+                    useGlobalPrompt),
                 BuildAdvancedOutputHelp(helpId),
             },
         };
@@ -1666,7 +1695,7 @@ internal sealed partial class UserCommandsSettingsForm : FormContent
                 new JsonObject
                 {
                     ["type"] = "TextBlock",
-                    ["text"] = "Arrays preserve element order and may be empty. Invalid array elements appear as error results with their original JSON in details; root fallback results skip them and use the first valid object. A single unlabelled or json Markdown code fence is accepted. Other invalid formatted output uses the normal output rules. The global system prompt controls this format and can be edited in Global settings.",
+                    ["text"] = "Arrays preserve element order and may be empty. Invalid array elements appear as error results with their original JSON in details; root fallback results skip them and use the first valid object. A single unlabelled or json Markdown code fence is accepted. Other invalid formatted output uses the normal output rules. The global system prompt is configured in Global settings and can be disabled for this command.",
                     ["isSubtle"] = true,
                     ["wrap"] = true,
                 },
@@ -1831,6 +1860,7 @@ internal sealed partial class UserCommandsSettingsForm : FormContent
         RemoveDraftInput($"format_{commandId}");
         RemoveDraftInput($"requestArguments_{commandId}");
         RemoveDraftInput($"advancedOutput_{commandId}");
+        RemoveDraftInput($"globalAdvancedOutputPrompt_{commandId}");
         RemoveDraftInput($"delay_{commandId}");
         RemoveDraftInput($"provider_{commandId}");
         RemoveDraftInput($"fallback_{commandId}");
