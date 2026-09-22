@@ -13,6 +13,9 @@ namespace CommandPaletteLLM;
 
 internal sealed partial class UserCommandsSettingsForm : FormContent
 {
+    private const string SeparatorImageUrl = "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAA+gAAAAfCAYAAAB03OfYAAAAAXNSR0IArs4c6QAAAARnQU1BAACxjwv8YQUAAAAJcEhZcwAADsMAAA7DAcdvqGQAAACcSURBVHhe7dcxDQAACAQxpL9z2DEAQ5uciKsCAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA+C1JS5IkSZKk2/avAwAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAADwzQHTAoH7+gNkAAAAASUVORK5CYII=";
+    private const string SectionSeparatorImageUrl = "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAA+gAAAA+CAYAAAC4LDFLAAAAAXNSR0IArs4c6QAAAARnQU1BAACxjwv8YQUAAAAJcEhZcwAADsMAAA7DAcdvqGQAAAEeSURBVHhe7dkxDQAwDAPB8Adlau3eLeqQDHfSg7BcBQAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAADAhyRHkiRJkiTNZqBLkiRJkrSg91AHAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAKDjAnBCLsjc6V35AAAAAElFTkSuQmCC";
+
     private readonly UserCommandStore _store;
     private readonly LlmProviderSettingsStore _providerSettingsStore;
     private readonly JsonRequestTemplateStore _requestTemplateStore;
@@ -965,14 +968,13 @@ internal sealed partial class UserCommandsSettingsForm : FormContent
             },
             BuildGlobalSettingsEditor(globalSettings, expandedGlobalSettings, draftInputs),
             BuildSettingsFileActions(settingsFileStatus),
+            BuildSeparator(isSectionSeparator: true),
             new JsonObject
             {
                 ["type"] = "TextBlock",
                 ["text"] = "LLM providers",
                 ["size"] = "Large",
                 ["weight"] = "Bolder",
-                ["separator"] = true,
-                ["spacing"] = "ExtraLarge",
             },
             new JsonObject
             {
@@ -991,12 +993,12 @@ internal sealed partial class UserCommandsSettingsForm : FormContent
                 draftInputs));
         }
 
+        body.Add(BuildSeparator());
         body.Add(new JsonObject
         {
             ["type"] = "TextBlock",
             ["text"] = "Add an LLM provider",
             ["weight"] = "Bolder",
-            ["separator"] = true,
         });
         body.Add(BuildTextInput(
             "newProviderName",
@@ -1013,14 +1015,13 @@ internal sealed partial class UserCommandsSettingsForm : FormContent
             },
         });
 
+        body.Add(BuildSeparator(isSectionSeparator: true));
         body.Add(new JsonObject
         {
             ["type"] = "TextBlock",
             ["text"] = "JSON Request Templates",
             ["size"] = "Large",
             ["weight"] = "Bolder",
-            ["separator"] = true,
-            ["spacing"] = "ExtraLarge",
         });
         body.Add(new JsonObject
         {
@@ -1049,12 +1050,12 @@ internal sealed partial class UserCommandsSettingsForm : FormContent
                 draftInputs));
         }
 
+        body.Add(BuildSeparator());
         body.Add(new JsonObject
         {
             ["type"] = "TextBlock",
             ["text"] = "Add a JSON request template",
             ["weight"] = "Bolder",
-            ["separator"] = true,
         });
         body.Add(BuildTextInput(
             "newRequestTemplateName",
@@ -1071,14 +1072,13 @@ internal sealed partial class UserCommandsSettingsForm : FormContent
             },
         });
 
+        body.Add(BuildSeparator(isSectionSeparator: true));
         body.Add(new JsonObject
         {
             ["type"] = "TextBlock",
             ["text"] = "Commands",
             ["size"] = "Large",
             ["weight"] = "Bolder",
-            ["separator"] = true,
-            ["spacing"] = "ExtraLarge",
         });
         body.Add(new JsonObject
         {
@@ -1108,12 +1108,12 @@ internal sealed partial class UserCommandsSettingsForm : FormContent
                 draftInputs));
         }
 
+        body.Add(BuildSeparator());
         body.Add(new JsonObject
         {
             ["type"] = "TextBlock",
             ["text"] = "Add a command",
             ["weight"] = "Bolder",
-            ["separator"] = true,
         });
         body.Add(BuildTextInput(
             "newName",
@@ -1228,7 +1228,7 @@ internal sealed partial class UserCommandsSettingsForm : FormContent
                                             ["actions"] = new JsonArray
                                             {
                                                 BuildSubmitAction(
-                                                    "✎",
+                                                    "✏",
                                                     "edit-global",
                                                     "Edit global advanced output prompt",
                                                     associatedInputs: "none"),
@@ -1431,14 +1431,14 @@ internal sealed partial class UserCommandsSettingsForm : FormContent
         var actions = new JsonArray
         {
             BuildSubmitAction(
-                "✎",
+                "✏",
                 $"edit-provider:{provider.Id}",
                 "Edit provider"),
         };
         if (canDelete)
         {
             actions.Add(BuildSubmitAction(
-                "🗑",
+                "✕",
                 $"delete-provider:{provider.Id}",
                 "Delete provider",
                 associatedInputs: "none",
@@ -1631,11 +1631,11 @@ internal sealed partial class UserCommandsSettingsForm : FormContent
                                             ["actions"] = new JsonArray
                                             {
                                                 BuildSubmitAction(
-                                                    "✎",
+                                                    "✏",
                                                     $"edit-request-template:{requestTemplate.Id}",
                                                     "Edit JSON request template"),
                                                 BuildSubmitAction(
-                                                    "🗑",
+                                                    "✕",
                                                     $"delete-request-template:{requestTemplate.Id}",
                                                     "Delete JSON request template",
                                                     associatedInputs: "none",
@@ -1813,11 +1813,11 @@ internal sealed partial class UserCommandsSettingsForm : FormContent
                                             ["actions"] = new JsonArray
                                             {
                                                 BuildSubmitAction(
-                                                    "✎",
+                                                    "✏",
                                                     $"edit:{command.Id}",
                                                     "Edit command"),
                                                 BuildSubmitAction(
-                                                    "🗑",
+                                                    "✕",
                                                     $"delete:{command.Id}",
                                                     "Delete command",
                                                     associatedInputs: "none",
@@ -1842,12 +1842,14 @@ internal sealed partial class UserCommandsSettingsForm : FormContent
                             "Command name",
                             ReadText(draftInputs, $"name_{command.Id}", command.Name),
                             string.Empty),
+                        BuildSeparator(),
                         BuildTextInput(
                             $"format_{command.Id}",
                             "Prompt format",
                             ReadText(draftInputs, $"format_{command.Id}", command.OutputFormat),
                             "Use {} for the search term, {{ for {, and }} for }.",
                             isMultiline: true),
+                        BuildSeparator(),
                         BuildChoiceInput(
                             $"provider_{command.Id}",
                             "LLM provider",
@@ -1864,15 +1866,7 @@ internal sealed partial class UserCommandsSettingsForm : FormContent
                                     "Refresh JSON request templates for the selected provider"),
                             },
                         },
-                        new JsonObject
-                        {
-                            ["type"] = "Image",
-                            ["url"] = "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAA+gAAAABCAYAAABNAIQzAAAAAXNSR0IArs4c6QAAAARnQU1BAACxjwv8YQUAAAAJcEhZcwAADsMAAA7DAcdvqGQAAAAeSURBVFhH7cNBDQAACAAho19zjeEHNqZaVVVV9fcBOgbAoIUsD+wAAAAASUVORK5CYII=",
-                            ["altText"] = "Section separator",
-                            ["width"] = "stretch",
-                            ["height"] = "1px",
-                            ["spacing"] = "Small",
-                        },
+                        BuildSeparator(),
                         new JsonObject
                         {
                             ["type"] = "TextBlock",
@@ -1905,6 +1899,7 @@ internal sealed partial class UserCommandsSettingsForm : FormContent
                             ["wrap"] = true,
                             ["spacing"] = "Small",
                         },
+                        BuildSeparator(),
                         BuildAdvancedOutputInput(
                             $"advancedOutput_{command.Id}",
                             ReadBoolean(
@@ -1916,12 +1911,14 @@ internal sealed partial class UserCommandsSettingsForm : FormContent
                                 draftInputs,
                                 $"globalAdvancedOutputPrompt_{command.Id}",
                                 command.UseGlobalAdvancedOutputSystemPrompt)),
+                        BuildSeparator(),
                         BuildNumberInput(
                             $"delay_{command.Id}",
                             "Send delay (milliseconds)",
                             ReadInteger(draftInputs, $"delay_{command.Id}", command.SendDelayMilliseconds),
                             0,
                             10_000),
+                        BuildSeparator(),
                         BuildToggleInput(
                             $"fallback_{command.Id}",
                             "Enable as fallback command",
@@ -1929,7 +1926,9 @@ internal sealed partial class UserCommandsSettingsForm : FormContent
                                 draftInputs,
                                 $"fallback_{command.Id}",
                                 command.EffectiveExposure != CommandExposure.None)),
+                        BuildSeparator(),
                         BuildIconInput(command, draftInputs),
+                        BuildSeparator(),
                         new JsonObject
                         {
                             ["type"] = "ActionSet",
@@ -2097,6 +2096,16 @@ internal sealed partial class UserCommandsSettingsForm : FormContent
                 })
                 .ToArray()),
         };
+
+    private static JsonObject BuildSeparator(bool isSectionSeparator = false) => new()
+    {
+        ["type"] = "Image",
+        ["url"] = isSectionSeparator ? SectionSeparatorImageUrl : SeparatorImageUrl,
+        ["altText"] = string.Empty,
+        ["width"] = "stretch",
+        ["height"] = isSectionSeparator ? "62px" : "31px",
+        ["spacing"] = "None",
+    };
 
     private static JsonObject BuildToggleInput(string id, string title, bool value) =>
         new()

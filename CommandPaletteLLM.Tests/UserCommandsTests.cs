@@ -821,13 +821,29 @@ public sealed class UserCommandsTests
             form.TemplateJson,
             StringComparison.Ordinal);
         Assert.Contains(
-            "\"type\":\"Image\",\"url\":\"data:image/png;base64,",
+            "qGQAAACcSURB",
             form.TemplateJson,
             StringComparison.Ordinal);
         Assert.Contains(
-            "\"altText\":\"Section separator\",\"width\":\"stretch\",\"height\":\"1px\",\"spacing\":\"Small\"",
+            "qGQAAAEeSURB",
             form.TemplateJson,
             StringComparison.Ordinal);
+        Assert.Contains(
+            "\"altText\":\"\",\"width\":\"stretch\",\"height\":\"31px\",\"spacing\":\"None\"",
+            form.TemplateJson,
+            StringComparison.Ordinal);
+        Assert.Contains(
+            "\"altText\":\"\",\"width\":\"stretch\",\"height\":\"62px\",\"spacing\":\"None\"",
+            form.TemplateJson,
+            StringComparison.Ordinal);
+        Assert.True(
+            form.TemplateJson.Split("\"height\":\"31px\"", StringSplitOptions.None).Length - 1 >= 11);
+        Assert.Contains("\\u270F", form.TemplateJson, StringComparison.Ordinal);
+        Assert.Contains(
+            "\"id\":\"delete:summarize\",\"title\":\"\\u2715\"",
+            form.TemplateJson,
+            StringComparison.Ordinal);
+        Assert.DoesNotContain("\\uD83D\\uDDD1", form.TemplateJson, StringComparison.OrdinalIgnoreCase);
     }
 
     [Fact]
