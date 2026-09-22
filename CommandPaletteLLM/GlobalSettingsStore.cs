@@ -8,14 +8,19 @@ internal sealed class GlobalSettingsStore
 {
     private readonly object _sync = new();
     private readonly string? _filePath;
+    private readonly SettingsDocumentStore? _settingsDocumentStore;
     private GlobalSettings _settings;
 
     public GlobalSettingsStore()
-        : this(Path.Combine(
-            Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
-            "CommandPaletteLLM",
-            "settings.json"))
+        : this(new SettingsDocumentStore())
     {
+    }
+
+    internal GlobalSettingsStore(SettingsDocumentStore settingsDocumentStore)
+    {
+        _settingsDocumentStore = settingsDocumentStore;
+        _filePath = null;
+        _settings = settingsDocumentStore.GetGlobalSettings();
     }
 
     internal GlobalSettingsStore(string? filePath)
@@ -39,14 +44,64 @@ internal sealed class GlobalSettingsStore
 
         lock (_sync)
         {
-            Save(replacement);
+            if (_settingsDocumentStore is not null)
+            {
+                _settingsDocumentStore.ReplaceGlobalSettings(replacement);
+            }
+            else
+            {
+                Save(replacement);
+            }
+
             _settings = replacement;
         }
     }
 
     public void ResetAdvancedOutputSystemPrompt() => Replace(new GlobalSettings());
 
-    private static GlobalSettings Load(string? filePath)
+    internal SettingsDocumentStore? SettingsDocumentStore => _settingsDocumentStore;
+
+    internal void ReloadFromDocument()
+    {
+        if (_settingsDocumentStore is null)
+        {
+            return;
+        }
+
+        lock (_sync)
+        {
+            _settings = _settingsDocumentStore.GetGlobalSettings();
+        }
+    }
+
+    internal SettingsFileStatus GetFileStatus()
+    {
+        if (_settingsDocumentStore is not null)
+        {
+            return _settingsDocumentStore.GetFileStatus();
+        }
+
+        lock (_sync)
+        {
+            if (_filePath is null)
+            {
+                return new SettingsFileStatus(false, null, null, false);
+            }
+
+            if (!File.Exists(_filePath))
+            {
+                return new SettingsFileStatus(false, null, null, false);
+            }
+
+            return new SettingsFileStatus(
+                true,
+                SettingsFileLauncher.GetShellVisiblePath(_filePath),
+                File.GetLastWriteTime(_filePath),
+                false);
+        }
+    }
+
+    internal static GlobalSettings Load(string? filePath)
     {
         if (filePath is null || !File.Exists(filePath))
         {

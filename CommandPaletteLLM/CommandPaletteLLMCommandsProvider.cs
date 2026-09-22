@@ -22,10 +22,15 @@ public partial class CommandPaletteLLMCommandsProvider : CommandProvider
     private IFallbackCommandItem[] _fallbackCommands = [];
 
     public CommandPaletteLLMCommandsProvider()
+        : this(new SettingsDocumentStore())
+    {
+    }
+
+    private CommandPaletteLLMCommandsProvider(SettingsDocumentStore settingsDocumentStore)
         : this(
-            new UserCommandStore(),
-            new LlmProviderSettingsStore(),
-            new GlobalSettingsStore())
+            new UserCommandStore(settingsDocumentStore),
+            new LlmProviderSettingsStore(settingsDocumentStore),
+            new GlobalSettingsStore(settingsDocumentStore))
     {
     }
 

@@ -1,9 +1,11 @@
 using Microsoft.CommandPalette.Extensions.Toolkit;
 using System;
 using System.Collections.Generic;
+using System.ComponentModel;
 using System.Diagnostics.CodeAnalysis;
 using System.IO;
 using System.Linq;
+using System.Runtime.InteropServices;
 using System.Text.Json;
 using System.Text.Json.Nodes;
 
@@ -18,6 +20,7 @@ internal sealed partial class UserCommandsSettingsForm : FormContent
     private readonly Action _globalSettingsChanged;
     private readonly Action _providerSettingsChanged;
     private readonly CommandIconStore _iconStore;
+    private readonly ISettingsFileLauncher _settingsFileLauncher;
     private readonly HashSet<string> _expandedCommandIds = new(StringComparer.Ordinal);
     private readonly HashSet<string> _expandedProviderIds = new(StringComparer.Ordinal);
     private readonly JsonObject _draftInputs = [];
@@ -30,6 +33,25 @@ internal sealed partial class UserCommandsSettingsForm : FormContent
         Action commandsChanged,
         Action globalSettingsChanged,
         Action providerSettingsChanged)
+        : this(
+            store,
+            providerSettingsStore,
+            globalSettingsStore,
+            commandsChanged,
+            globalSettingsChanged,
+            providerSettingsChanged,
+            new SettingsFileLauncher())
+    {
+    }
+
+    internal UserCommandsSettingsForm(
+        UserCommandStore store,
+        LlmProviderSettingsStore providerSettingsStore,
+        GlobalSettingsStore globalSettingsStore,
+        Action commandsChanged,
+        Action globalSettingsChanged,
+        Action providerSettingsChanged,
+        ISettingsFileLauncher settingsFileLauncher)
     {
         _store = store;
         _providerSettingsStore = providerSettingsStore;
@@ -37,6 +59,7 @@ internal sealed partial class UserCommandsSettingsForm : FormContent
         _commandsChanged = commandsChanged;
         _globalSettingsChanged = globalSettingsChanged;
         _providerSettingsChanged = providerSettingsChanged;
+        _settingsFileLauncher = settingsFileLauncher;
         _iconStore = new CommandIconStore(store.StorageDirectory);
         Refresh();
     }
@@ -58,6 +81,36 @@ internal sealed partial class UserCommandsSettingsForm : FormContent
             }
 
             CaptureDraftInputs(input);
+
+            if (string.Equals(actionId, "reveal-settings-file", StringComparison.Ordinal))
+            {
+                return OpenSettingsFile(reveal: true);
+            }
+
+            if (string.Equals(actionId, "open-settings-file", StringComparison.Ordinal))
+            {
+                return OpenSettingsFile(reveal: false);
+            }
+
+            if (string.Equals(actionId, "import-settings", StringComparison.Ordinal))
+            {
+                return ImportSettings();
+            }
+
+            if (string.Equals(actionId, "export-settings", StringComparison.Ordinal))
+            {
+                return ExportSettings();
+            }
+
+            if (string.Equals(actionId, "reload-settings", StringComparison.Ordinal))
+            {
+                return ReloadSettings();
+            }
+
+            if (string.Equals(actionId, "toggle-settings-format", StringComparison.Ordinal))
+            {
+                return ToggleSettingsFormatting();
+            }
 
             if (string.Equals(actionId, "edit-global", StringComparison.Ordinal))
             {
@@ -176,12 +229,120 @@ internal sealed partial class UserCommandsSettingsForm : FormContent
         }
         catch (IOException exception)
         {
-            return ShowError($"Commands could not be saved: {exception.Message}");
+            return ShowError($"The settings operation failed: {exception.Message}");
         }
         catch (UnauthorizedAccessException exception)
         {
-            return ShowError($"Commands could not be saved: {exception.Message}");
+            return ShowError($"The settings operation failed: {exception.Message}");
         }
+        catch (Win32Exception exception)
+        {
+            return ShowError($"The settings file could not be opened: {exception.Message}");
+        }
+        catch (COMException exception)
+        {
+            return ShowError($"The Windows file picker failed: {exception.Message}");
+        }
+    }
+
+    private CommandResult OpenSettingsFile(bool reveal)
+    {
+        var status = _globalSettingsStore.GetFileStatus();
+        if (!status.Exists || status.FilePath is null)
+        {
+            return ShowError("The settings file has not been created yet. Save a setting first.");
+        }
+
+        if (reveal)
+        {
+            _settingsFileLauncher.Reveal(status.FilePath);
+        }
+        else
+        {
+            _settingsFileLauncher.Open(status.FilePath);
+        }
+
+        return CommandResult.KeepOpen();
+    }
+
+    private CommandResult ImportSettings()
+    {
+        var settingsDocumentStore = _globalSettingsStore.SettingsDocumentStore;
+        if (settingsDocumentStore is null)
+        {
+            return ShowError("Settings import is unavailable without persistent settings storage.");
+        }
+
+        var destinationPath = settingsDocumentStore.ImportFilePath;
+        if (destinationPath is null)
+        {
+            return ShowError("Settings import is unavailable without a settings file location.");
+        }
+
+        if (!_settingsFileLauncher.PickAndImportFile(destinationPath))
+        {
+            return CommandResult.KeepOpen();
+        }
+
+        return ReloadSettings();
+    }
+
+    private CommandResult ExportSettings()
+    {
+        var settingsDocumentStore = _globalSettingsStore.SettingsDocumentStore;
+        if (settingsDocumentStore is null)
+        {
+            return ShowError("Settings export is unavailable without persistent settings storage.");
+        }
+
+        var destinationPath = _settingsFileLauncher.PickExportFile();
+        if (destinationPath is null)
+        {
+            return CommandResult.KeepOpen();
+        }
+
+        settingsDocumentStore.Export(destinationPath);
+        return CommandResult.KeepOpen();
+    }
+
+    private CommandResult ReloadSettings()
+    {
+        var settingsDocumentStore = _globalSettingsStore.SettingsDocumentStore;
+        if (settingsDocumentStore is null)
+        {
+            return ShowError("Settings reload is unavailable without persistent settings storage.");
+        }
+
+        settingsDocumentStore.Reload();
+        ApplyReloadedSettings();
+        return CommandResult.KeepOpen();
+    }
+
+    private CommandResult ToggleSettingsFormatting()
+    {
+        var settingsDocumentStore = _globalSettingsStore.SettingsDocumentStore;
+        if (settingsDocumentStore is null)
+        {
+            return ShowError("Settings formatting is unavailable without unified settings storage.");
+        }
+
+        settingsDocumentStore.ToggleFormatting();
+        Refresh();
+        return CommandResult.KeepOpen();
+    }
+
+    private void ApplyReloadedSettings()
+    {
+        _draftInputs.Clear();
+        _expandedCommandIds.Clear();
+        _expandedProviderIds.Clear();
+        _globalSettingsExpanded = false;
+        _store.ReloadFromDocument();
+        _providerSettingsStore.ReloadFromDocument();
+        _globalSettingsStore.ReloadFromDocument();
+        _providerSettingsChanged();
+        _commandsChanged();
+        Refresh();
     }
 
     private CommandResult Add(JsonObject input)
@@ -465,6 +626,7 @@ internal sealed partial class UserCommandsSettingsForm : FormContent
     {
         TemplateJson = BuildCard(
             _globalSettingsStore.Get(),
+            _globalSettingsStore.GetFileStatus(),
             _providerSettingsStore.GetProviders(),
             _store.GetCommands(),
             _globalSettingsExpanded,
@@ -486,6 +648,7 @@ internal sealed partial class UserCommandsSettingsForm : FormContent
         Justification = "The card builder adds only primitive values and explicit JsonNode instances.")]
     private static JsonObject BuildCard(
         GlobalSettings globalSettings,
+        SettingsFileStatus settingsFileStatus,
         IReadOnlyList<LlmProviderSettings> providers,
         IReadOnlyList<UserCommandDefinition> commands,
         bool expandedGlobalSettings,
@@ -504,6 +667,7 @@ internal sealed partial class UserCommandsSettingsForm : FormContent
                 ["weight"] = "Bolder",
             },
             BuildGlobalSettingsEditor(globalSettings, expandedGlobalSettings, draftInputs),
+            BuildSettingsFileActions(settingsFileStatus),
             new JsonObject
             {
                 ["type"] = "TextBlock",
@@ -761,6 +925,132 @@ internal sealed partial class UserCommandsSettingsForm : FormContent
                             },
                         },
                     },
+                },
+            },
+        };
+    }
+
+    [UnconditionalSuppressMessage(
+        "AOT",
+        "IL3050",
+        Justification = "The card builder adds only primitive values and explicit JsonNode instances.")]
+    [UnconditionalSuppressMessage(
+        "Trimming",
+        "IL2026",
+        Justification = "The card builder adds only primitive values and explicit JsonNode instances.")]
+    private static JsonObject BuildSettingsFileActions(SettingsFileStatus status)
+    {
+        var statusText = status.Exists && status.LastModified is not null
+            ? $"✓ Created · Last modified: {status.LastModified:yyyy-MM-dd HH:mm:ss}"
+            : "⚠ Not created yet";
+        return new JsonObject
+        {
+            ["type"] = "Container",
+            ["style"] = "emphasis",
+            ["spacing"] = "Medium",
+            ["items"] = new JsonArray
+            {
+                new JsonObject
+                {
+                    ["type"] = "TextBlock",
+                    ["text"] = "Settings",
+                    ["weight"] = "Bolder",
+                    ["wrap"] = true,
+                },
+                new JsonObject
+                {
+                    ["type"] = "TextBlock",
+                    ["text"] = "Contains global settings, LLM providers, and commands.",
+                    ["isSubtle"] = true,
+                    ["spacing"] = "Small",
+                    ["wrap"] = true,
+                },
+                new JsonObject
+                {
+                    ["type"] = "TextBlock",
+                    ["text"] = statusText,
+                    ["color"] = status.Exists ? "Good" : "Warning",
+                    ["spacing"] = "Small",
+                    ["wrap"] = true,
+                },
+                new JsonObject
+                {
+                    ["type"] = "ActionSet",
+                    ["actions"] = new JsonArray
+                    {
+                        BuildSubmitAction(
+                            "📂 Reveal",
+                            "reveal-settings-file",
+                            status.Exists
+                                ? "Reveal the current settings.json file in the default file explorer."
+                                : null,
+                            associatedInputs: "none",
+                            isEnabled: status.Exists),
+                        BuildSubmitAction(
+                            "✎ Edit",
+                            "open-settings-file",
+                            status.Exists
+                                ? "Edit the current settings.json file in the default text editor."
+                                : null,
+                            associatedInputs: "none",
+                            isEnabled: status.Exists),
+                        BuildSubmitAction(
+                            "⇩ Import",
+                            "import-settings",
+                            "Select a settings.json file to import and overwrite the current settings.",
+                            associatedInputs: "none"),
+                    },
+                },
+                new JsonObject
+                {
+                    ["type"] = "ActionSet",
+                    ["spacing"] = "Small",
+                    ["actions"] = new JsonArray
+                    {
+                        BuildSubmitAction(
+                            "⇧ Export",
+                            "export-settings",
+                            status.Exists
+                                ? "Export the current settings so they can be restored later with Import."
+                                : null,
+                            associatedInputs: "none",
+                            isEnabled: status.Exists),
+                        BuildSubmitAction(
+                            "↻ Reload",
+                            "reload-settings",
+                            status.Exists
+                                ? "Reload settings from the current settings.json file."
+                                : "Look for settings.json in the extension settings folder and load it.",
+                            associatedInputs: "none"),
+                        BuildSubmitAction(
+                            status.BeautifulFormatting
+                                ? "Format compactly"
+                                : "Format beautifully",
+                            "toggle-settings-format",
+                            status.Exists
+                                ? status.BeautifulFormatting
+                                    ? "Rewrite settings.json in compact form."
+                                    : "Rewrite settings.json with four spaces per indentation level."
+                                : null,
+                            associatedInputs: "none",
+                            isEnabled: status.Exists),
+                    },
+                },
+                new JsonObject
+                {
+                    ["type"] = "TextBlock",
+                    ["text"] = "⚠ Manual changes to settings.json are not detected automatically. Select Reload to load them.",
+                    ["color"] = "Warning",
+                    ["spacing"] = "Medium",
+                    ["wrap"] = true,
+                },
+                new JsonObject
+                {
+                    ["type"] = "TextBlock",
+                    ["text"] = "⚠ Due to Command Palette settings behavior, completely close this extension settings tab after reloading for changes to take effect. For example, open Gallery or select Installed again to return to the extensions list.",
+                    ["color"] = "Warning",
+                    ["spacing"] = "Small",
+                    ["wrap"] = true,
                 },
             },
         };
@@ -1309,7 +1599,8 @@ internal sealed partial class UserCommandsSettingsForm : FormContent
         string actionId,
         string? tooltip = null,
         string? associatedInputs = null,
-        string? style = null)
+        string? style = null,
+        bool isEnabled = true)
     {
         var action = new JsonObject
         {
@@ -1332,6 +1623,11 @@ internal sealed partial class UserCommandsSettingsForm : FormContent
         if (!string.IsNullOrEmpty(style))
         {
             action["style"] = style;
+        }
+
+        if (!isEnabled)
+        {
+            action["isEnabled"] = false;
         }
 
         return action;

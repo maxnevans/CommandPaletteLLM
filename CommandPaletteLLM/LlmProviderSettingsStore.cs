@@ -11,19 +11,22 @@ internal sealed class LlmProviderSettingsStore
     private readonly object _sync = new();
     private readonly string? _filePath;
     private readonly IDataProtector _dataProtector;
+    private readonly SettingsDocumentStore? _settingsDocumentStore;
     private List<LlmProviderSettings> _providers;
 
     public LlmProviderSettingsStore()
-        : this(
-            Path.Combine(
-                Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
-                "CommandPaletteLLM",
-                "providers.json"),
-            Path.Combine(
-                Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
-                "CommandPaletteLLM",
-                "provider.json"))
+        : this(new SettingsDocumentStore())
     {
+    }
+
+    internal LlmProviderSettingsStore(SettingsDocumentStore settingsDocumentStore)
+    {
+        _settingsDocumentStore = settingsDocumentStore;
+        _filePath = null;
+        _dataProtector = new DpapiDataProtector();
+        _providers = settingsDocumentStore.GetProviders()
+            .Select(provider => provider.Clone())
+            .ToList();
     }
 
     internal LlmProviderSettingsStore(string? filePath)
@@ -47,6 +50,21 @@ internal sealed class LlmProviderSettingsStore
         if (needsMigration && _filePath is not null)
         {
             Save(_providers);
+        }
+    }
+
+    internal void ReloadFromDocument()
+    {
+        if (_settingsDocumentStore is null)
+        {
+            return;
+        }
+
+        lock (_sync)
+        {
+            _providers = _settingsDocumentStore.GetProviders()
+                .Select(provider => provider.Clone())
+                .ToList();
         }
     }
 
@@ -109,12 +127,20 @@ internal sealed class LlmProviderSettingsStore
 
         lock (_sync)
         {
-            Save(replacement);
+            if (_settingsDocumentStore is not null)
+            {
+                _settingsDocumentStore.ReplaceProviders(replacement);
+            }
+            else
+            {
+                Save(replacement);
+            }
+
             _providers = replacement;
         }
     }
 
-    private static List<LlmProviderSettings> Load(
+    internal static List<LlmProviderSettings> Load(
         string? filePath,
         string? legacyFilePath,
         IDataProtector dataProtector,
@@ -204,7 +230,7 @@ internal sealed class LlmProviderSettingsStore
         File.Move(temporaryPath, _filePath, true);
     }
 
-    private static LlmProviderSettings FromStored(
+    internal static LlmProviderSettings FromStored(
         StoredLlmProviderSettings stored,
         IDataProtector dataProtector)
     {
@@ -232,7 +258,7 @@ internal sealed class LlmProviderSettingsStore
         };
     }
 
-    private static StoredLlmProviderSettings ToStored(
+    internal static StoredLlmProviderSettings ToStored(
         LlmProviderSettings provider,
         IDataProtector dataProtector) => new()
         {
@@ -245,7 +271,7 @@ internal sealed class LlmProviderSettingsStore
                 : dataProtector.Protect(provider.ApiKey),
         };
 
-    private static LlmProviderSettings Normalize(LlmProviderSettings provider)
+    internal static LlmProviderSettings Normalize(LlmProviderSettings provider)
     {
         var normalized = provider.Clone();
         normalized.Id = string.IsNullOrWhiteSpace(normalized.Id) ? "default" : normalized.Id.Trim();

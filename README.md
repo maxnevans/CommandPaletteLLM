@@ -181,14 +181,15 @@ The effective directory contains:
 
 ```text
 CommandPaletteLLM/
-├── commands.json
-├── providers.json
 ├── settings.json
 └── Icons/
 ```
 
 API keys are encrypted for the current Windows user with Windows DPAPI before
-they are stored in `providers.json`. Prompts are sent only to the provider
+they are stored in the `Providers` section of `settings.json`. Global settings,
+providers, and commands are stored together in that file. Existing
+`commands.json`, `providers.json`, and `provider.json` files are migrated
+automatically. Prompts are sent only to the provider
 assigned to the command, and a non-local provider must be explicitly authorized
 in settings before the extension contacts it. The extension has no separate
 telemetry or cloud backend. See [PRIVACY.md](PRIVACY.md) for the full data flow.

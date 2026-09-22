@@ -202,6 +202,202 @@ public sealed class UserCommandsTests
     }
 
     [Fact]
+    public void Settings_GlobalFileActionsStayDisabledUntilTheSettingsFileExists()
+    {
+        var directory = Path.Combine(Path.GetTempPath(), $"CommandPaletteLLM.Tests-{Guid.NewGuid():N}");
+        var filePath = Path.Combine(directory, "settings.json");
+
+        try
+        {
+            var globalStore = new GlobalSettingsStore(filePath);
+            var launcher = new RecordingSettingsFileLauncher();
+            var form = new UserCommandsSettingsForm(
+                new UserCommandStore(filePath: null),
+                new LlmProviderSettingsStore(filePath: null),
+                globalStore,
+                () => { },
+                () => { },
+                () => { },
+                launcher);
+
+            Assert.Contains("Reveal", form.TemplateJson, StringComparison.Ordinal);
+            Assert.Contains("\"id\":\"reveal-settings-file\"", form.TemplateJson, StringComparison.Ordinal);
+            Assert.Contains("Edit", form.TemplateJson, StringComparison.Ordinal);
+            Assert.Contains("\"id\":\"open-settings-file\"", form.TemplateJson, StringComparison.Ordinal);
+            Assert.Contains("Import", form.TemplateJson, StringComparison.Ordinal);
+            Assert.Contains("\"id\":\"import-settings\"", form.TemplateJson, StringComparison.Ordinal);
+            Assert.Contains("Export", form.TemplateJson, StringComparison.Ordinal);
+            Assert.Contains("\"id\":\"export-settings\"", form.TemplateJson, StringComparison.Ordinal);
+            Assert.Contains("Reload", form.TemplateJson, StringComparison.Ordinal);
+            Assert.Contains("\"id\":\"reload-settings\"", form.TemplateJson, StringComparison.Ordinal);
+            Assert.Contains("Format beautifully", form.TemplateJson, StringComparison.Ordinal);
+            Assert.Contains("\"id\":\"toggle-settings-format\"", form.TemplateJson, StringComparison.Ordinal);
+            using (var card = JsonDocument.Parse(form.TemplateJson))
+            {
+                Assert.Equal(3, GetActionSetSize(card.RootElement, "reveal-settings-file"));
+                Assert.Equal(3, GetActionSetSize(card.RootElement, "export-settings"));
+                Assert.True(IsActionEnabled(card.RootElement, "reload-settings"));
+            }
+            Assert.Contains("Select a settings.json file to import", form.TemplateJson, StringComparison.Ordinal);
+            Assert.Contains(
+                "Look for settings.json in the extension settings folder and load it.",
+                form.TemplateJson,
+                StringComparison.Ordinal);
+            Assert.Contains(
+                "\"text\":\"Settings\",\"weight\":\"Bolder\"",
+                form.TemplateJson,
+                StringComparison.Ordinal);
+            Assert.Contains("\\u26A0 Not created yet", form.TemplateJson, StringComparison.Ordinal);
+            Assert.Contains("\"isEnabled\":false", form.TemplateJson, StringComparison.Ordinal);
+            Assert.DoesNotContain(
+                "Reveal the current settings.json file in the default file explorer.",
+                form.TemplateJson,
+                StringComparison.Ordinal);
+            Assert.Contains("Manual changes to settings.json are not detected automatically", form.TemplateJson, StringComparison.Ordinal);
+            Assert.Contains("completely close this extension settings tab", form.TemplateJson, StringComparison.Ordinal);
+            Assert.False(File.Exists(filePath));
+
+            form.SubmitForm("{}", """{"actionId":"reveal-settings-file"}""");
+
+            Assert.Null(launcher.RevealedFilePath);
+            Assert.False(File.Exists(filePath));
+
+            form.SubmitForm("{}", """{"actionId":"edit-global"}""");
+            form.SubmitForm(
+                """{"advancedOutputSystemPrompt":"Saved prompt"}""",
+                """{"actionId":"save-global"}""");
+
+            Assert.Contains("\\u2713 Created \\u00B7 Last modified:", form.TemplateJson, StringComparison.Ordinal);
+            Assert.DoesNotContain("\"isEnabled\":false", form.TemplateJson, StringComparison.Ordinal);
+            Assert.Contains(
+                "Reveal the current settings.json file in the default file explorer.",
+                form.TemplateJson,
+                StringComparison.Ordinal);
+            Assert.Contains(
+                "Export the current settings so they can be restored later with Import.",
+                form.TemplateJson,
+                StringComparison.Ordinal);
+            Assert.True(File.Exists(filePath));
+            Assert.Equal(
+                "Saved prompt",
+                new GlobalSettingsStore(filePath).Get().AdvancedOutputSystemPrompt);
+
+            form.SubmitForm("{}", """{"actionId":"reveal-settings-file"}""");
+            form.SubmitForm("{}", """{"actionId":"open-settings-file"}""");
+
+            Assert.Equal(filePath, launcher.RevealedFilePath);
+            Assert.Equal(filePath, launcher.OpenedFilePath);
+        }
+        finally
+        {
+            if (Directory.Exists(directory))
+            {
+                Directory.Delete(directory, recursive: true);
+            }
+        }
+    }
+
+    [Fact]
+    public void Settings_ImportsExportsAndReloadsUnifiedSettings()
+    {
+        var directory = Path.Combine(Path.GetTempPath(), $"CommandPaletteLLM.Tests-{Guid.NewGuid():N}");
+        var settingsPath = Path.Combine(directory, "settings.json");
+        var importPath = Path.Combine(directory, "import.json");
+        var exportPath = Path.Combine(directory, "export.json");
+
+        try
+        {
+            var documentStore = CreateSettingsDocumentStore(settingsPath);
+            documentStore.ReplaceGlobalSettings(new GlobalSettings
+            {
+                AdvancedOutputSystemPrompt = "Original prompt",
+            });
+            var importedStore = CreateSettingsDocumentStore(importPath);
+            importedStore.ReplaceGlobalSettings(new GlobalSettings
+            {
+                AdvancedOutputSystemPrompt = "Imported prompt",
+            });
+
+            var commandStore = new UserCommandStore(documentStore);
+            var providerStore = new LlmProviderSettingsStore(documentStore);
+            var globalStore = new GlobalSettingsStore(documentStore);
+            var launcher = new RecordingSettingsFileLauncher
+            {
+                ImportFilePath = importPath,
+                ExportFilePath = exportPath,
+            };
+            var form = new UserCommandsSettingsForm(
+                commandStore,
+                providerStore,
+                globalStore,
+                () => { },
+                () => { },
+                () => { },
+                launcher);
+
+            Assert.Contains("Format beautifully", form.TemplateJson, StringComparison.Ordinal);
+
+            form.SubmitForm("{}", """{"actionId":"toggle-settings-format"}""");
+
+            Assert.Contains("Format compactly", form.TemplateJson, StringComparison.Ordinal);
+            var beautifulJson = File.ReadAllText(settingsPath);
+            Assert.Contains("\n    \"Global\"", beautifulJson, StringComparison.Ordinal);
+            Assert.Contains("\"BeautifulFormatting\": true", beautifulJson, StringComparison.Ordinal);
+            Assert.True(CreateSettingsDocumentStore(settingsPath).GetFileStatus().BeautifulFormatting);
+
+            form.SubmitForm("{}", """{"actionId":"toggle-settings-format"}""");
+
+            Assert.Contains("Format beautifully", form.TemplateJson, StringComparison.Ordinal);
+            var compactJson = File.ReadAllText(settingsPath);
+            Assert.DoesNotContain("\n", compactJson, StringComparison.Ordinal);
+            Assert.Contains("\"BeautifulFormatting\":false", compactJson, StringComparison.Ordinal);
+            Assert.False(CreateSettingsDocumentStore(settingsPath).GetFileStatus().BeautifulFormatting);
+
+            form.SubmitForm("{}", """{"actionId":"import-settings"}""");
+
+            Assert.Equal("Imported prompt", globalStore.Get().AdvancedOutputSystemPrompt);
+            Assert.Contains("Imported prompt", File.ReadAllText(settingsPath), StringComparison.Ordinal);
+            var backupPath = SettingsFileLauncher.GetBackupPath(settingsPath, DateTime.Now);
+            Assert.True(File.Exists(backupPath));
+            Assert.Contains("Original prompt", File.ReadAllText(backupPath), StringComparison.Ordinal);
+
+            form.SubmitForm("{}", """{"actionId":"export-settings"}""");
+
+            Assert.True(File.Exists(exportPath));
+            Assert.Contains("Imported prompt", File.ReadAllText(exportPath), StringComparison.Ordinal);
+
+            var externalStore = CreateSettingsDocumentStore(settingsPath);
+            externalStore.ReplaceGlobalSettings(new GlobalSettings
+            {
+                AdvancedOutputSystemPrompt = "Externally edited prompt",
+            });
+            Assert.Equal("Imported prompt", globalStore.Get().AdvancedOutputSystemPrompt);
+
+            form.SubmitForm("{}", """{"actionId":"reload-settings"}""");
+
+            Assert.Equal("Externally edited prompt", globalStore.Get().AdvancedOutputSystemPrompt);
+
+            File.Delete(settingsPath);
+            form.SubmitForm("{}", """{"actionId":"reload-settings"}""");
+
+            Assert.Equal(
+                GlobalSettings.DefaultAdvancedOutputSystemPrompt,
+                globalStore.Get().AdvancedOutputSystemPrompt);
+            Assert.Empty(commandStore.GetCommands());
+            Assert.Equal("local-model", providerStore.Get().Model);
+            Assert.Contains("\\u26A0 Not created yet", form.TemplateJson, StringComparison.Ordinal);
+            Assert.False(File.Exists(settingsPath));
+        }
+        finally
+        {
+            if (Directory.Exists(directory))
+            {
+                Directory.Delete(directory, recursive: true);
+            }
+        }
+    }
+
+    [Fact]
     public void Settings_ExistingCommandHasClearlyScopedActions()
     {
         var provider = CreateProvider(out var store);
@@ -1501,6 +1697,94 @@ public sealed class UserCommandsTests
     }
 
     [Fact]
+    public void SettingsDocumentStore_MigratesAndPersistsAllSectionsInOneFile()
+    {
+        var directory = Path.Combine(Path.GetTempPath(), $"CommandPaletteLLM.Tests-{Guid.NewGuid():N}");
+        var settingsPath = Path.Combine(directory, "settings.json");
+        var commandsPath = Path.Combine(directory, "commands.json");
+        var providersPath = Path.Combine(directory, "providers.json");
+        var legacyProviderPath = Path.Combine(directory, "provider.json");
+
+        try
+        {
+            Directory.CreateDirectory(directory);
+            File.WriteAllText(
+                settingsPath,
+                """{"AdvancedOutputSystemPrompt":"Migrated prompt"}""");
+            var legacyCommandStore = new UserCommandStore(commandsPath);
+            AddCommand(legacyCommandStore, "Migrated command", "{}", "migrated-command");
+            var legacyProviderStore = new LlmProviderSettingsStore(providersPath);
+            legacyProviderStore.Replace(new LlmProviderSettings
+            {
+                BaseUrl = "https://example.test/v1",
+                Model = "migrated-model",
+                ApiKey = "secret",
+            });
+
+            var documentStore = new SettingsDocumentStore(
+                settingsPath,
+                commandsPath,
+                providersPath,
+                legacyProviderPath,
+                new DpapiDataProtector());
+
+            Assert.Equal("Migrated prompt", documentStore.GetGlobalSettings().AdvancedOutputSystemPrompt);
+            Assert.Equal("Migrated command", Assert.Single(documentStore.GetCommands()).Name);
+            Assert.Equal("migrated-model", Assert.Single(documentStore.GetProviders()).Model);
+            Assert.False(File.Exists(commandsPath));
+            Assert.False(File.Exists(providersPath));
+
+            var json = File.ReadAllText(settingsPath);
+            Assert.Contains("\"Global\"", json, StringComparison.Ordinal);
+            Assert.Contains("\"Providers\"", json, StringComparison.Ordinal);
+            Assert.Contains("\"Commands\"", json, StringComparison.Ordinal);
+            Assert.Contains("ProtectedApiKey", json, StringComparison.Ordinal);
+            Assert.DoesNotContain("\"ApiKey\":\"secret\"", json, StringComparison.Ordinal);
+
+            var reloaded = new SettingsDocumentStore(
+                settingsPath,
+                legacyCommandsPath: null,
+                legacyProvidersPath: null,
+                legacyProviderPath: null,
+                new DpapiDataProtector());
+            Assert.Equal("Migrated prompt", reloaded.GetGlobalSettings().AdvancedOutputSystemPrompt);
+            Assert.Equal("Migrated command", Assert.Single(reloaded.GetCommands()).Name);
+            Assert.Equal("secret", Assert.Single(reloaded.GetProviders()).ApiKey);
+        }
+        finally
+        {
+            if (Directory.Exists(directory))
+            {
+                Directory.Delete(directory, recursive: true);
+            }
+        }
+    }
+
+    [Fact]
+    public void SettingsFileLauncher_ResolvesVirtualizedLocalAppDataForShellProcesses()
+    {
+        var resolvedPath = SettingsFileLauncher.GetShellVisiblePath(
+            @"C:\Users\Person\AppData\Local\CommandPaletteLLM\settings.json",
+            @"C:\Users\Person\AppData\Local",
+            @"C:\Users\Person\AppData\Local\Packages\PackageFamily\LocalCache");
+
+        Assert.Equal(
+            @"C:\Users\Person\AppData\Local\Packages\PackageFamily\LocalCache\Local\CommandPaletteLLM\settings.json",
+            resolvedPath);
+    }
+
+    [Fact]
+    public void SettingsFileLauncher_RevealUsesTheRegisteredFolderHandler()
+    {
+        var startInfo = SettingsFileLauncher.CreateRevealStartInfo(
+            @"C:\Settings\CommandPaletteLLM\settings.json");
+
+        Assert.Equal(@"C:\Settings\CommandPaletteLLM", startInfo.FileName);
+        Assert.True(startInfo.UseShellExecute);
+        Assert.Empty(startInfo.Arguments);
+    }
+
+    [Fact]
     public void Store_LegacyCommandsDefaultToEnabledGlobalFallback()
     {
         var directory = Path.Combine(Path.GetTempPath(), $"CommandPaletteLLM.Tests-{Guid.NewGuid():N}");
@@ -1605,6 +1889,13 @@ public sealed class UserCommandsTests
         return new CommandPaletteLLMCommandsProvider(store);
     }
 
+    private static SettingsDocumentStore CreateSettingsDocumentStore(string filePath) => new(
+        filePath,
+        legacyCommandsPath: null,
+        legacyProvidersPath: null,
+        legacyProviderPath: null,
+        new DpapiDataProtector());
+
     private static UserCommandsSettingsForm GetSettingsForm(
         CommandPaletteLLMCommandsProvider provider)
     {
@@ -1639,6 +1930,77 @@ public sealed class UserCommandsTests
                 : exposure == CommandExposure.FallbackCommand,
         });
         store.ReplaceAll(commands);
+    }
+
+    private static int GetActionSetSize(JsonElement element, string actionId)
+    {
+        if (element.ValueKind == JsonValueKind.Object)
+        {
+            if (element.TryGetProperty("type", out var type) &&
+                string.Equals(type.GetString(), "ActionSet", StringComparison.Ordinal) &&
+                element.TryGetProperty("actions", out var actions) &&
+                actions.EnumerateArray().Any(action =>
+                    action.TryGetProperty("id", out var id) &&
+                    string.Equals(id.GetString(), actionId, StringComparison.Ordinal)))
+            {
+                return actions.GetArrayLength();
+            }
+
+            foreach (var property in element.EnumerateObject())
+            {
+                var size = GetActionSetSize(property.Value, actionId);
+                if (size >= 0)
+                {
+                    return size;
+                }
+            }
+        }
+        else if (element.ValueKind == JsonValueKind.Array)
+        {
+            foreach (var child in element.EnumerateArray())
+            {
+                var size = GetActionSetSize(child, actionId);
+                if (size >= 0)
+                {
+                    return size;
+                }
+            }
+        }
+
+        return -1;
+    }
+
+    private static bool IsActionEnabled(JsonElement element, string actionId)
+    {
+        if (element.ValueKind == JsonValueKind.Object)
+        {
+            if (element.TryGetProperty("id", out var id) &&
+                string.Equals(id.GetString(), actionId, StringComparison.Ordinal))
+            {
+                return !element.TryGetProperty("isEnabled", out var isEnabled) ||
+                    isEnabled.GetBoolean();
+            }
+
+            foreach (var property in element.EnumerateObject())
+            {
+                if (IsActionEnabled(property.Value, actionId))
+                {
+                    return true;
+                }
+            }
+        }
+        else if (element.ValueKind == JsonValueKind.Array)
+        {
+            foreach (var child in element.EnumerateArray())
+            {
+                if (IsActionEnabled(child, actionId))
+                {
+                    return true;
+                }
+            }
+        }
+
+        return false;
     }
 
     private static async Task WaitUntilAsync(Func<bool> condition)
@@ -1698,6 +2060,36 @@ public sealed class UserCommandsTests
             RequestedCustomRequestArguments = customRequestArguments;
             return Task.FromResult<IReadOnlyList<string>>(responses);
         }
+    }
+
+    private sealed class RecordingSettingsFileLauncher : ISettingsFileLauncher
+    {
+        public string? RevealedFilePath { get; private set; }
+
+        public string? OpenedFilePath { get; private set; }
+
+        public string? ImportFilePath { get; init; }
+
+        public string? ExportFilePath { get; init; }
+
+        public void Reveal(string filePath) => RevealedFilePath = filePath;
+
+        public void Open(string filePath) => OpenedFilePath = filePath;
+
+        public bool PickAndImportFile(string destinationPath)
+        {
+            if (ImportFilePath is null)
+            {
+                return false;
+            }
+
+            Directory.CreateDirectory(Path.GetDirectoryName(destinationPath)!);
+            SettingsFileLauncher.BackupExistingFile(destinationPath, DateTime.Now);
+            File.Copy(ImportFilePath, destinationPath, overwrite: true);
+            return true;
+        }
+
+        public string? PickExportFile() => ExportFilePath;
     }
 
     private sealed class ControlledLlmClient : ILlmClient

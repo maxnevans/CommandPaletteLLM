@@ -10,23 +10,45 @@ internal sealed class UserCommandStore
 {
     private readonly object _sync = new();
     private readonly string? _filePath;
+    private readonly SettingsDocumentStore? _settingsDocumentStore;
     private List<UserCommandDefinition> _commands;
 
     public UserCommandStore()
-        : this(Path.Combine(
-            Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
-            "CommandPaletteLLM",
-            "commands.json"))
+        : this(new SettingsDocumentStore())
     {
+    }
+
+    internal UserCommandStore(SettingsDocumentStore settingsDocumentStore)
+    {
+        _settingsDocumentStore = settingsDocumentStore;
+        _filePath = null;
+        _commands = settingsDocumentStore.GetCommands().Select(command => command.Clone()).ToList();
     }
 
     internal UserCommandStore(string? filePath)
     {
         _filePath = filePath;
-        _commands = LoadCommands();
+        _commands = LoadCommands(filePath);
     }
 
-    internal string? StorageDirectory => _filePath is null ? null : Path.GetDirectoryName(_filePath);
+    internal string? StorageDirectory =>
+        _settingsDocumentStore?.StorageDirectory ??
+        (_filePath is null ? null : Path.GetDirectoryName(_filePath));
+
+    internal void ReloadFromDocument()
+    {
+        if (_settingsDocumentStore is null)
+        {
+            return;
+        }
+
+        lock (_sync)
+        {
+            _commands = _settingsDocumentStore.GetCommands()
+                .Select(command => command.Clone())
+                .ToList();
+        }
+    }
 
     public IReadOnlyList<UserCommandDefinition> GetCommands()
     {
@@ -42,21 +64,29 @@ internal sealed class UserCommandStore
 
         lock (_sync)
         {
-            SaveCommands(replacement);
+            if (_settingsDocumentStore is not null)
+            {
+                _settingsDocumentStore.ReplaceCommands(replacement);
+            }
+            else
+            {
+                SaveCommands(replacement);
+            }
+
             _commands = replacement;
         }
     }
 
-    private List<UserCommandDefinition> LoadCommands()
+    internal static List<UserCommandDefinition> LoadCommands(string? filePath)
     {
-        if (_filePath is null || !File.Exists(_filePath))
+        if (filePath is null || !File.Exists(filePath))
         {
             return [];
         }
 
         try
         {
-            var json = File.ReadAllText(_filePath);
+            var json = File.ReadAllText(filePath);
             var commands = JsonSerializer.Deserialize(
                 json,
                 CommandPaletteJsonContext.Default.ListUserCommandDefinition) ?? [];
@@ -103,7 +133,7 @@ internal sealed class UserCommandStore
         File.Move(temporaryPath, _filePath, true);
     }
 
-    private static bool IsValidStoredCommand(UserCommandDefinition command) =>
+    internal static bool IsValidStoredCommand(UserCommandDefinition command) =>
         !string.IsNullOrWhiteSpace(command.Id) &&
         !string.IsNullOrWhiteSpace(command.Name) &&
         !string.IsNullOrWhiteSpace(command.OutputFormat) &&
