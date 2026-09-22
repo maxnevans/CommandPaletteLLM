@@ -647,6 +647,74 @@ public sealed class UserCommandsTests
     }
 
     [Fact]
+    public void Settings_IconPickerFillsInputAndDefersCopyUntilSave()
+    {
+        var directory = Path.Combine(Path.GetTempPath(), $"CommandPaletteLLM.Tests-{Guid.NewGuid():N}");
+        var sourceIcon = Path.Combine(directory, "source.svg");
+        var commandFile = Path.Combine(directory, "commands.json");
+
+        try
+        {
+            Directory.CreateDirectory(directory);
+            File.WriteAllText(sourceIcon, "<svg />");
+            var store = new UserCommandStore(commandFile);
+            AddCommand(store, "Summarize", "Summarize: {}", "summarize");
+            var launcher = new RecordingSettingsFileLauncher { IconFilePath = sourceIcon };
+            var form = new UserCommandsSettingsForm(
+                store,
+                new LlmProviderSettingsStore(filePath: null),
+                new GlobalSettingsStore(filePath: null),
+                () => { },
+                () => { },
+                () => { },
+                launcher);
+
+            Assert.Contains("\"id\":\"pick-icon:summarize\"", form.TemplateJson, StringComparison.Ordinal);
+            Assert.Contains("Import a custom icon file", form.TemplateJson, StringComparison.Ordinal);
+            Assert.Contains(
+                "\"type\":\"TextBlock\",\"text\":\"Custom icon file (optional)\"",
+                form.TemplateJson,
+                StringComparison.Ordinal);
+            Assert.Contains(
+                "\"width\":\"auto\",\"verticalContentAlignment\":\"Center\"",
+                form.TemplateJson,
+                StringComparison.Ordinal);
+            Assert.DoesNotContain(
+                "\"id\":\"icon_summarize\",\"label\"",
+                form.TemplateJson,
+                StringComparison.Ordinal);
+            Assert.True(
+                form.TemplateJson.IndexOf("pick-icon:summarize", StringComparison.Ordinal) <
+                form.TemplateJson.IndexOf("icon_summarize", StringComparison.Ordinal));
+
+            form.SubmitForm("{}", """{"actionId":"pick-icon:summarize"}""");
+
+            Assert.Empty(Assert.Single(store.GetCommands()).IconPath);
+            Assert.Contains(
+                $"\"value\":{JsonSerializer.Serialize(sourceIcon)}",
+                form.TemplateJson,
+                StringComparison.Ordinal);
+            Assert.False(Directory.Exists(Path.Combine(directory, "Icons")));
+
+            var escapedPath = sourceIcon.Replace("\\", "\\\\", StringComparison.Ordinal);
+            form.SubmitForm(
+                $$"""{"icon_summarize":"{{escapedPath}}"}""",
+                """{"actionId":"save:summarize"}""");
+
+            var storedPath = Assert.Single(store.GetCommands()).IconPath;
+            Assert.StartsWith(Path.Combine(directory, "Icons"), storedPath, StringComparison.OrdinalIgnoreCase);
+            Assert.Equal("<svg />", File.ReadAllText(storedPath));
+        }
+        finally
+        {
+            if (Directory.Exists(directory))
+            {
+                Directory.Delete(directory, recursive: true);
+            }
+        }
+    }
+
+    [Fact]
     public void Settings_SavesProviderWithoutRedisplayingApiKey()
     {
         var commandStore = new UserCommandStore(filePath: null);
@@ -2070,6 +2138,8 @@ public sealed class UserCommandsTests
 
         public string? ImportFilePath { get; init; }
 
+        public string? IconFilePath { get; init; }
+
         public string? ExportFilePath { get; init; }
 
         public void Reveal(string filePath) => RevealedFilePath = filePath;
@@ -2088,6 +2158,8 @@ public sealed class UserCommandsTests
             File.Copy(ImportFilePath, destinationPath, overwrite: true);
             return true;
         }
+
+        public string? PickIconFile() => IconFilePath;
 
         public string? PickExportFile() => ExportFilePath;
     }

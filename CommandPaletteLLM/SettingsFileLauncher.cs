@@ -17,6 +17,8 @@ internal interface ISettingsFileLauncher
 
     bool PickAndImportFile(string destinationPath);
 
+    string? PickIconFile();
+
     string? PickExportFile();
 }
 
@@ -78,15 +80,7 @@ internal sealed class SettingsFileLauncher : ISettingsFileLauncher
         var owner = GetForegroundWindow();
         return Task.Run(async () =>
         {
-            var picker = new FileOpenPicker
-            {
-                CommitButtonText = "Import",
-                SuggestedStartLocation = PickerLocationId.DocumentsLibrary,
-                ViewMode = PickerViewMode.List,
-            };
-            picker.FileTypeFilter.Add(".json");
-            WinRT.Interop.InitializeWithWindow.Initialize(picker, owner);
-            var file = await picker.PickSingleFileAsync();
+            var file = await PickFileAsync(owner, [".json"]);
             if (file is null)
             {
                 return false;
@@ -107,6 +101,17 @@ internal sealed class SettingsFileLauncher : ISettingsFileLauncher
                 NameCollisionOption.ReplaceExisting);
             return true;
         }).GetAwaiter().GetResult();
+    }
+
+    public string? PickIconFile()
+    {
+        var owner = GetForegroundWindow();
+        return Task.Run(async () =>
+            (await PickFileAsync(
+                owner,
+                [".ico", ".png", ".jpg", ".jpeg", ".svg"]))?.Path)
+            .GetAwaiter()
+            .GetResult();
     }
 
     internal static string GetBackupPath(string settingsFilePath, DateTime date) =>
@@ -143,6 +148,25 @@ internal sealed class SettingsFileLauncher : ISettingsFileLauncher
             var file = await picker.PickSaveFileAsync();
             return file?.Path;
         }).GetAwaiter().GetResult();
+    }
+
+    private static async Task<StorageFile?> PickFileAsync(
+        IntPtr owner,
+        IEnumerable<string> fileTypes)
+    {
+        var picker = new FileOpenPicker
+        {
+            CommitButtonText = "Import",
+            SuggestedStartLocation = PickerLocationId.DocumentsLibrary,
+            ViewMode = PickerViewMode.List,
+        };
+        foreach (var fileType in fileTypes)
+        {
+            picker.FileTypeFilter.Add(fileType);
+        }
+
+        WinRT.Interop.InitializeWithWindow.Initialize(picker, owner);
+        return await picker.PickSingleFileAsync();
     }
 
     [DllImport("user32.dll")]

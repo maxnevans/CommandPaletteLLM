@@ -215,6 +215,12 @@ internal sealed partial class UserCommandsSettingsForm : FormContent
                 return Save(input, actionId[savePrefix.Length..]);
             }
 
+            const string pickIconPrefix = "pick-icon:";
+            if (actionId?.StartsWith(pickIconPrefix, StringComparison.Ordinal) == true)
+            {
+                return PickCommandIcon(actionId[pickIconPrefix.Length..]);
+            }
+
             const string deletePrefix = "delete:";
             if (actionId?.StartsWith(deletePrefix, StringComparison.Ordinal) == true)
             {
@@ -577,6 +583,24 @@ internal sealed partial class UserCommandsSettingsForm : FormContent
         RemoveDraftInputsForCommand(commandId);
         _commandsChanged();
         Refresh();
+        return CommandResult.KeepOpen();
+    }
+
+    private CommandResult PickCommandIcon(string commandId)
+    {
+        if (!_store.GetCommands().Any(command =>
+            string.Equals(command.Id, commandId, StringComparison.Ordinal)))
+        {
+            return ShowError("The command no longer exists.");
+        }
+
+        var iconPath = _settingsFileLauncher.PickIconFile();
+        if (iconPath is not null)
+        {
+            _draftInputs[$"icon_{commandId}"] = iconPath;
+            Refresh();
+        }
+
         return CommandResult.KeepOpen();
     }
 
@@ -1353,12 +1377,7 @@ internal sealed partial class UserCommandsSettingsForm : FormContent
                                 draftInputs,
                                 $"fallback_{command.Id}",
                                 command.EffectiveExposure != CommandExposure.None)),
-                        BuildTextInput(
-                            $"icon_{command.Id}",
-                            "Custom icon file (optional)",
-                            ReadText(draftInputs, $"icon_{command.Id}", command.IconPath),
-                            "ICO, PNG, JPG, or SVG path; copied into extension storage",
-                            isRequired: false),
+                        BuildIconInput(command, draftInputs),
                         new JsonObject
                         {
                             ["type"] = "ActionSet",
@@ -1380,6 +1399,79 @@ internal sealed partial class UserCommandsSettingsForm : FormContent
             },
         };
     }
+
+    [UnconditionalSuppressMessage(
+        "AOT",
+        "IL3050",
+        Justification = "The card builder adds only primitive values and explicit JsonNode instances.")]
+    [UnconditionalSuppressMessage(
+        "Trimming",
+        "IL2026",
+        Justification = "The card builder adds only primitive values and explicit JsonNode instances.")]
+    private static JsonObject BuildIconInput(
+        UserCommandDefinition command,
+        JsonObject draftInputs) =>
+        new()
+        {
+            ["type"] = "Container",
+            ["items"] = new JsonArray
+            {
+                new JsonObject
+                {
+                    ["type"] = "TextBlock",
+                    ["text"] = "Custom icon file (optional)",
+                    ["wrap"] = true,
+                },
+                new JsonObject
+                {
+                    ["type"] = "ColumnSet",
+                    ["spacing"] = "Small",
+                    ["columns"] = new JsonArray
+                    {
+                        new JsonObject
+                        {
+                            ["type"] = "Column",
+                            ["width"] = "auto",
+                            ["verticalContentAlignment"] = "Center",
+                            ["items"] = new JsonArray
+                            {
+                                new JsonObject
+                                {
+                                    ["type"] = "ActionSet",
+                                    ["actions"] = new JsonArray
+                                    {
+                                        BuildSubmitAction(
+                                            "📂",
+                                            $"pick-icon:{command.Id}",
+                                            "Import a custom icon file"),
+                                    },
+                                },
+                            },
+                        },
+                        new JsonObject
+                        {
+                            ["type"] = "Column",
+                            ["width"] = "stretch",
+                            ["spacing"] = "Small",
+                            ["verticalContentAlignment"] = "Center",
+                            ["items"] = new JsonArray
+                            {
+                                new JsonObject
+                                {
+                                    ["type"] = "Input.Text",
+                                    ["id"] = $"icon_{command.Id}",
+                                    ["value"] = ReadText(
+                                        draftInputs,
+                                        $"icon_{command.Id}",
+                                        command.IconPath),
+                                    ["placeholder"] = "ICO, PNG, JPG, or SVG path; copied into extension storage when saved",
+                                },
+                            },
+                        },
+                    },
+                },
+            },
+        };
 
     private static JsonObject BuildTextInput(
         string id,
