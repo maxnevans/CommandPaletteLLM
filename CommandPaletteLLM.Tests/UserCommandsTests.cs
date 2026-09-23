@@ -421,8 +421,8 @@ public sealed class UserCommandsTests
         Assert.DoesNotContain("Response variations", form.TemplateJson, StringComparison.Ordinal);
         Assert.Contains("Enable advanced output format", form.TemplateJson, StringComparison.Ordinal);
         Assert.Contains("Use global system prompt for advanced output", form.TemplateJson, StringComparison.Ordinal);
-        Assert.Contains("configured in Global settings", form.TemplateJson, StringComparison.Ordinal);
-        Assert.Contains("included directly in Prompt format", form.TemplateJson, StringComparison.Ordinal);
+        Assert.Contains("the advanced-output toggle controls parsing only", form.TemplateJson, StringComparison.Ordinal);
+        Assert.Contains("instructions directly in Prompt format", form.TemplateJson, StringComparison.Ordinal);
         Assert.Contains("\"id\":\"globalAdvancedOutputPrompt_stable-id\"", form.TemplateJson, StringComparison.Ordinal);
         Assert.Contains("\"type\":\"RichTextBlock\"", form.TemplateJson, StringComparison.Ordinal);
         Assert.Contains("\"type\":\"Action.ToggleVisibility\"", form.TemplateJson, StringComparison.Ordinal);
@@ -1135,7 +1135,7 @@ public sealed class UserCommandsTests
     }
 
     [Fact]
-    public void Provider_UsesOneGlobalSystemPromptOnlyForAdvancedCommands()
+    public void Provider_DefaultModeInjectsSystemPromptOnlyForAdvancedCommands()
     {
         var commandStore = new UserCommandStore(filePath: null);
         AddCommand(
@@ -1191,24 +1191,33 @@ public sealed class UserCommandsTests
                 EnableAdvancedOutput = true,
             },
             client,
-            TimeSpan.Zero,
-            advancedOutputSystemPrompt: string.Empty);
+            TimeSpan.Zero);
 
         page.SearchText = "query";
 
         Assert.Null(Assert.Single(client.SystemPrompts));
     }
 
-    [Fact]
-    public void AdvancedCommand_CanDisableGlobalSystemPromptForPageAndFallback()
+    [Theory]
+    [InlineData(false, false, false)]
+    [InlineData(false, false, true)]
+    [InlineData(false, true, false)]
+    [InlineData(false, true, true)]
+    [InlineData(true, false, false)]
+    [InlineData(true, false, true)]
+    [InlineData(true, true, false)]
+    [InlineData(true, true, true)]
+    public void AdvancedCommand_InjectionRespectsModeAndBothTogglesForPageAndFallback(
+        bool pipeline, bool advancedOutput, bool useGlobalPrompt)
     {
         var definition = new UserCommandDefinition
         {
             Id = "advanced",
             Name = "Advanced",
             OutputFormat = "{}",
-            EnableAdvancedOutput = true,
-            UseGlobalAdvancedOutputSystemPrompt = false,
+            Mode = pipeline ? CommandMode.Pipeline : CommandMode.Default,
+            EnableAdvancedOutput = advancedOutput,
+            UseGlobalAdvancedOutputSystemPrompt = useGlobalPrompt,
         };
         var pageClient = new RecordingLlmClient("{\"title\":\"Answer\"}");
         var page = new FormattedCommandPage(
@@ -1226,8 +1235,9 @@ public sealed class UserCommandsTests
         page.SearchText = "page query";
         fallback.FallbackHandler!.UpdateQuery("fallback query");
 
-        Assert.Null(Assert.Single(pageClient.SystemPrompts));
-        Assert.Null(Assert.Single(fallbackClient.SystemPrompts));
+        var expectedPrompt = !pipeline && advancedOutput && useGlobalPrompt ? "Shared global instruction" : null;
+        Assert.Equal(expectedPrompt, Assert.Single(pageClient.SystemPrompts));
+        Assert.Equal(expectedPrompt, Assert.Single(fallbackClient.SystemPrompts));
     }
 
     [Fact]

@@ -16,6 +16,7 @@ Command Palette LLM is a Windows Command Palette extension for creating small, f
 ## Features
 
 - Create and edit commands without changing code.
+- Choose a single prompt or an ordered pipeline with named steps and per-step providers and request settings.
 - Build multiline prompt templates with `{}` placeholders for the current query.
 - Configure multiple OpenAI-compatible providers and assign a provider per command.
 - Use each tool as a dedicated top-level command, an inline fallback result, or both.
@@ -102,6 +103,7 @@ In the extension settings, enter a command name, select **Add**, and edit the ne
 | Option | Description |
 | --- | --- |
 | Command name | The top-level command and fallback label. Names must be unique. |
+| Command mode | Default keeps the existing single prompt; Pipeline chains named steps. Select **Apply mode** to switch the editor. |
 | Prompt format | The exact prompt sent to the provider. Every `{}` is replaced with the user's query. |
 | Custom request arguments | Optional provider-specific JSON body fields, including reasoning controls or `n`. |
 | JSON request template | Optional reusable request fields assigned to the selected provider. |
@@ -118,6 +120,69 @@ Summarize the following text in one concise sentence:
 
 {}
 ```
+
+### Chain steps in a pipeline
+
+Edit a command, select **Pipeline of steps**, and choose **Apply mode**. The command
+keeps its name, send delay, fallback setting, custom icon, and Command Palette ID.
+Configure aliases such as `>>` using Command Palette's native alias settings.
+
+Choose **User step** or an application-provided system step from the **Step type**
+picker, then select **Add step**. User steps have their own prompt, provider, JSON
+request template, and custom request arguments. Each step appears as a card
+inside its command, with **Edit step** / **Collapse step**, move, and remove actions.
+Adding a step opens its card and preserves other editors and unsaved inputs.
+Collapsing a step keeps its edits; **Save changes** on the command saves the chain.
+Each card shows where its input comes from: **Input** for the first step, then the
+name of the preceding step. Steps run from top to bottom.
+In the first step, `{}` receives the search text; later steps receive the preceding
+step's complete response. Multiple provider choices are joined with blank lines,
+so the next step can structure all variations together. Requests run sequentially;
+the send delay applies once before the chain. Changing the query cancels the chain,
+and a failed step stops it without publishing intermediate content.
+
+For a **Translate** command, a pipeline could be:
+
+1. **Generate** — ask for 5–7 translations and supporting content.
+2. **Structure** — reorganize those translations with another prompt.
+3. **Advanced output format** — use the built-in system step to request the existing
+   advanced output JSON format.
+
+The advanced output system step is always available to add. It can be removed from
+an individual pipeline, repeated, or moved anywhere in the chain. Its shared system
+prompt is editable in **System steps → Advanced output format**, with save, cancel,
+and reset-to-default actions. This permanent card has no delete action. An empty
+prompt disables system-message injection. Its provider and request arguments are
+configurable per occurrence in a pipeline. Existing customized global prompts are
+retained as this shared system-step prompt. In Pipeline mode, the advanced-output
+toggle never injects a prompt; only an explicitly included formatting step sends it.
+Default mode retains automatic injection when both **Enable advanced output** and
+**Use global system prompt for advanced output** are enabled.
+Pipeline step cards have no advanced-output toggles. **Enable advanced output**
+remains on the command card and controls how its final responses are displayed.
+
+The last step connects to output automatically. With **Enable advanced output** on,
+the existing advanced-output rules apply: valid JSON becomes rich results, invalid
+array entries become error results on the command page, and root fallback uses the
+first valid entry. Other invalid formatted output follows the regular text rules.
+With the option off, all responses use regular output, including JSON. A pipeline
+does not need a formatting step to return advanced JSON.
+
+**Save changes** persists the chain; **Cancel editing** discards its edits. Switching
+back to **Default** restores the original single-prompt settings, including the
+separate global-system-prompt toggle, while retaining
+the saved pipeline for later use. Existing
+commands start in Default mode. Switching to Pipeline for the first time copies the
+current prompt and request settings into the first step. Add a formatting step
+explicitly if you want the shared system prompt in the pipeline. Default-mode
+commands can disable **Use global system prompt** and include JSON-format
+instructions directly in their prompt instead.
+
+The [Command Palette SDK](https://learn.microsoft.com/en-us/windows/powertoys/command-palette/extensibility-overview)
+provides command, alias, and fallback integration, but no LLM pipeline model or
+editor. Pipelines therefore use the extension's existing settings file and form;
+only commands appear as native Command Palette commands, while steps belong to
+their command and are edited within it.
 
 Use `{{` and `}}` when the prompt itself needs literal braces. A template may contain `{}` more than once; `{0}` and unmatched braces are rejected.
 
@@ -160,7 +225,7 @@ If the endpoint is offline, the command page displays its connection state and r
 
 ## Advanced output
 
-Advanced output lets the model control how results appear in Command Palette. Enable it for a command and the extension automatically sends the global advanced output system prompt before the command prompt. The expected response is either one JSON result object or, when the user's prompt asks for variations, an ordered array of result objects. A result object uses these case-sensitive fields:
+Advanced output lets the model control how results appear in Command Palette. In Default mode, **Enable advanced output** controls result parsing and injects the shared system prompt when **Use global system prompt for advanced output** is also enabled. In Pipeline mode, **Enable advanced output** only controls presentation of the final response; system-prompt injection belongs exclusively to the **Advanced output format** step, which runs independently of that toggle. The expected response is either one JSON result object or an ordered array of result objects. A result object uses these case-sensitive fields:
 
 ```json
 {
@@ -183,7 +248,7 @@ Advanced output lets the model control how results appear in Command Palette. En
 
 Dedicated command pages display every array element in order and flatten arrays from multiple provider choices in choice order. Invalid array elements remain in place as error results whose details and copy action contain the invalid JSON. An empty array produces no results. Root-page fallback commands skip invalid elements and display only the first valid object from the first provider choice; they remain hidden if none exists.
 
-The system prompt is shared by every command. Edit it from the collapsed **Advanced output system prompt** card in the **Global** section of extension settings, or reset it to the supplied default. Saving an empty prompt disables automatic system-message injection while leaving advanced response parsing enabled.
+The system prompt is shared. Edit it from **System steps → Advanced output format** in extension settings, or reset it to the supplied default. This application-provided step card cannot be deleted. Saving an empty prompt disables system-message injection while leaving command-level advanced response parsing unchanged.
 
 The supplied default is:
 

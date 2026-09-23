@@ -1,3 +1,5 @@
+using System.Collections.Generic;
+using System.Linq;
 using System.Text.Json.Serialization;
 
 namespace CommandPaletteLLM;
@@ -12,6 +14,10 @@ internal enum CommandExposure
 
 internal sealed class UserCommandDefinition
 {
+    public CommandMode Mode { get; set; }
+
+    public List<CommandStepDefinition> Steps { get; set; } = [];
+
     public string Id { get; set; } = string.Empty;
 
     public string Name { get; set; } = string.Empty;
@@ -24,6 +30,7 @@ internal sealed class UserCommandDefinition
 
     public bool EnableAdvancedOutput { get; set; }
 
+    // Applies only in Default mode; Pipeline mode delegates injection to its steps.
     public bool UseGlobalAdvancedOutputSystemPrompt { get; set; } = true;
 
     public string ProviderId { get; set; } = "default";
@@ -44,6 +51,8 @@ internal sealed class UserCommandDefinition
 
     public UserCommandDefinition Clone() => new()
     {
+        Mode = Mode,
+        Steps = (Steps ?? []).OfType<CommandStepDefinition>().Select(step => step.Clone()).ToList(),
         Id = Id,
         Name = Name,
         OutputFormat = OutputFormat,

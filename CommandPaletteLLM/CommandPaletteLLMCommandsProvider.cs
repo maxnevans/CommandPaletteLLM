@@ -132,7 +132,7 @@ public partial class CommandPaletteLLMCommandsProvider : CommandProvider
         _commandPages = definitions
             .Select(definition =>
             {
-                var runtime = GetProviderRuntime(definition.ProviderId);
+                var runtime = GetCommandRuntime(definition, advancedOutputSystemPrompt);
                 var templateArguments = GetTemplateArguments(definition);
                 return new FormattedCommandPage(
                     definition,
@@ -153,7 +153,7 @@ public partial class CommandPaletteLLMCommandsProvider : CommandProvider
             .Where(definition => definition.EffectiveExposure != CommandExposure.None)
             .Select(definition =>
             {
-                var runtime = GetProviderRuntime(definition.ProviderId);
+                var runtime = GetCommandRuntime(definition, advancedOutputSystemPrompt);
                 var templateArguments = GetTemplateArguments(definition);
                 return new FormattedFallbackItem(
                     definition,
@@ -178,16 +178,19 @@ public partial class CommandPaletteLLMCommandsProvider : CommandProvider
     }
 
     private string GetTemplateArguments(UserCommandDefinition definition)
+        => GetTemplateArguments(definition.ProviderId, definition.RequestTemplateId);
+
+    private string GetTemplateArguments(string providerId, string requestTemplateId)
     {
-        if (string.IsNullOrEmpty(definition.RequestTemplateId))
+        if (string.IsNullOrEmpty(requestTemplateId))
         {
             return string.Empty;
         }
 
-        var template = _requestTemplateStore.Get(definition.RequestTemplateId);
+        var template = _requestTemplateStore.Get(requestTemplateId);
         return template is not null && string.Equals(
             template.ProviderId,
-            definition.ProviderId,
+            providerId,
             StringComparison.Ordinal)
                 ? template.RequestArguments
                 : string.Empty;
@@ -257,6 +260,24 @@ public partial class CommandPaletteLLMCommandsProvider : CommandProvider
         _providerRuntimes.Add(resolvedId, runtime);
         monitor.StatusChanged += EndpointStatusChanged;
         return runtime;
+    }
+
+    private ProviderRuntime GetCommandRuntime(UserCommandDefinition definition, string systemPrompt)
+    {
+        if (definition.Mode != CommandMode.Pipeline)
+        {
+            return GetProviderRuntime(definition.ProviderId);
+        }
+
+        var runtimes = definition.Steps.Select(step => step.ProviderId)
+            .Distinct(StringComparer.Ordinal)
+            .ToDictionary(id => id, GetProviderRuntime, StringComparer.Ordinal);
+        var monitor = new PipelineEndpointMonitor(runtimes.Values.Select(runtime => runtime.Monitor).Distinct().ToArray());
+        return new ProviderRuntime(new PipelineLlmClient(
+            definition.Steps,
+            id => runtimes[id].Client,
+            step => GetTemplateArguments(step.ProviderId, step.RequestTemplateId),
+            systemPrompt), monitor);
     }
 
     private void CheckProviderConnections(bool force = false)

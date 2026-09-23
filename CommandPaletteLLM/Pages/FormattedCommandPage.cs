@@ -19,8 +19,7 @@ internal sealed partial class FormattedCommandPage : DynamicListPage, IDisposabl
     private readonly string _customRequestArguments;
     private readonly string _templateRequestArguments;
     private readonly bool _enableAdvancedOutput;
-    private readonly bool _useGlobalAdvancedOutputSystemPrompt;
-    private readonly string _advancedOutputSystemPrompt;
+    private readonly string? _systemPrompt;
     private readonly ILlmClient _llmClient;
     private readonly TimeSpan _debounce;
     private readonly TimeSpan _retryDelay;
@@ -55,12 +54,14 @@ internal sealed partial class FormattedCommandPage : DynamicListPage, IDisposabl
         string advancedOutputSystemPrompt = "",
         string templateRequestArguments = "")
     {
-        _promptFormat = definition.OutputFormat;
+        _promptFormat = definition.Mode == CommandMode.Pipeline ? "{}" : definition.OutputFormat;
         _customRequestArguments = definition.CustomRequestArguments;
         _templateRequestArguments = templateRequestArguments;
         _enableAdvancedOutput = definition.EnableAdvancedOutput;
-        _useGlobalAdvancedOutputSystemPrompt = definition.UseGlobalAdvancedOutputSystemPrompt;
-        _advancedOutputSystemPrompt = advancedOutputSystemPrompt;
+        _systemPrompt = definition.Mode == CommandMode.Default &&
+            definition.EnableAdvancedOutput && definition.UseGlobalAdvancedOutputSystemPrompt &&
+            !string.IsNullOrWhiteSpace(advancedOutputSystemPrompt)
+                ? advancedOutputSystemPrompt : null;
         _llmClient = llmClient;
         _debounce = debounce ?? TimeSpan.FromMilliseconds(definition.SendDelayMilliseconds);
         _retryDelay = retryDelay ?? DefaultRetryDelay;
@@ -219,11 +220,7 @@ internal sealed partial class FormattedCommandPage : DynamicListPage, IDisposabl
             _requestInFlight = true;
             var responses = await _llmClient.CompleteAsync(
                 prompt,
-                _enableAdvancedOutput &&
-                    _useGlobalAdvancedOutputSystemPrompt &&
-                    !string.IsNullOrWhiteSpace(_advancedOutputSystemPrompt)
-                    ? _advancedOutputSystemPrompt
-                    : null,
+                systemPrompt: _systemPrompt,
                 _templateRequestArguments,
                 _customRequestArguments,
                 cancellationToken).ConfigureAwait(false);

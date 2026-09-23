@@ -136,11 +136,25 @@ internal sealed class UserCommandStore
     internal static bool IsValidStoredCommand(UserCommandDefinition command) =>
         !string.IsNullOrWhiteSpace(command.Id) &&
         !string.IsNullOrWhiteSpace(command.Name) &&
-        !string.IsNullOrWhiteSpace(command.OutputFormat) &&
+        command.Mode is CommandMode.Default or CommandMode.Pipeline &&
         !string.IsNullOrWhiteSpace(command.ProviderId) &&
         command.EffectiveExposure is (CommandExposure.None or
             CommandExposure.FallbackCommand or
             CommandExposure.GlobalResult) &&
         command.SendDelayMilliseconds is >= 0 and <= 10_000 &&
-        OutputFormatter.TryFormat(command.OutputFormat, string.Empty, out _, out _);
+        (command.Mode == CommandMode.Pipeline
+            ? command.Steps is { Count: > 0 } && command.Steps.All(IsValidStep) &&
+                command.Steps.Select(step => step.Id).Distinct(StringComparer.Ordinal).Count() == command.Steps.Count
+            : !string.IsNullOrWhiteSpace(command.OutputFormat) &&
+                OutputFormatter.TryFormat(command.OutputFormat, string.Empty, out _, out _));
+
+    internal static bool IsValidStep(CommandStepDefinition step) =>
+        step is not null &&
+        !string.IsNullOrWhiteSpace(step.Id) &&
+        !string.IsNullOrWhiteSpace(step.Name) &&
+        !string.IsNullOrWhiteSpace(step.ProviderId) &&
+        step.Kind is CommandStepKind.User or CommandStepKind.AdvancedOutput &&
+        (step.Kind == CommandStepKind.AdvancedOutput ||
+            (!string.IsNullOrWhiteSpace(step.Prompt) &&
+                OutputFormatter.TryFormat(step.Prompt, string.Empty, out _, out _)));
 }

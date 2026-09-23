@@ -15,8 +15,7 @@ internal sealed partial class FormattedFallbackItem : FallbackCommandItem
     private readonly string _customRequestArguments;
     private readonly string _templateRequestArguments;
     private readonly bool _enableAdvancedOutput;
-    private readonly bool _useGlobalAdvancedOutputSystemPrompt;
-    private readonly string _advancedOutputSystemPrompt;
+    private readonly string? _systemPrompt;
     private readonly ILlmClient _llmClient;
     private readonly TimeSpan _debounce;
     private readonly Func<string, bool>? _isTopLevelCommandQuery;
@@ -50,12 +49,14 @@ internal sealed partial class FormattedFallbackItem : FallbackCommandItem
     {
         _copyCommand = Command as StableCopyTextCommand ??
             throw new InvalidOperationException("The fallback copy command was not initialized.");
-        _promptFormat = definition.OutputFormat;
+        _promptFormat = definition.Mode == CommandMode.Pipeline ? "{}" : definition.OutputFormat;
         _customRequestArguments = definition.CustomRequestArguments;
         _templateRequestArguments = templateRequestArguments;
         _enableAdvancedOutput = definition.EnableAdvancedOutput;
-        _useGlobalAdvancedOutputSystemPrompt = definition.UseGlobalAdvancedOutputSystemPrompt;
-        _advancedOutputSystemPrompt = advancedOutputSystemPrompt;
+        _systemPrompt = definition.Mode == CommandMode.Default &&
+            definition.EnableAdvancedOutput && definition.UseGlobalAdvancedOutputSystemPrompt &&
+            !string.IsNullOrWhiteSpace(advancedOutputSystemPrompt)
+                ? advancedOutputSystemPrompt : null;
         _llmClient = llmClient;
         _debounce = debounce ?? TimeSpan.FromMilliseconds(definition.SendDelayMilliseconds);
         _isTopLevelCommandQuery = isTopLevelCommandQuery;
@@ -105,11 +106,7 @@ internal sealed partial class FormattedFallbackItem : FallbackCommandItem
             await Task.Delay(_debounce, cancellationToken).ConfigureAwait(false);
             var responses = await _llmClient.CompleteAsync(
                 prompt,
-                _enableAdvancedOutput &&
-                    _useGlobalAdvancedOutputSystemPrompt &&
-                    !string.IsNullOrWhiteSpace(_advancedOutputSystemPrompt)
-                    ? _advancedOutputSystemPrompt
-                    : null,
+                systemPrompt: _systemPrompt,
                 templateRequestArguments: _templateRequestArguments,
                 customRequestArguments: _customRequestArguments,
                 cancellationToken: cancellationToken)

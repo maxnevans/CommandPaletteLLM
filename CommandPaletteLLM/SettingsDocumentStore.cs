@@ -465,6 +465,16 @@ internal sealed class SettingsDocumentStore
                     command.RequestTemplateId = string.Empty;
                 }
 
+                foreach (var step in command.Steps)
+                {
+                    if (!string.IsNullOrEmpty(step.RequestTemplateId) &&
+                        (!templatesById.TryGetValue(step.RequestTemplateId, out var stepTemplate) ||
+                            !string.Equals(stepTemplate.ProviderId, step.ProviderId, StringComparison.Ordinal)))
+                    {
+                        step.RequestTemplateId = string.Empty;
+                    }
+                }
+
                 return command;
             })
             .ToList();

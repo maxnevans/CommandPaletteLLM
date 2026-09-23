@@ -137,6 +137,11 @@ internal sealed partial class UserCommandsSettingsForm : FormContent
 
             CaptureDraftInputs(input);
 
+            if (actionId?.StartsWith("pipeline:", StringComparison.Ordinal) == true)
+            {
+                return EditPipeline(actionId);
+            }
+
             if (string.Equals(actionId, "reveal-settings-file", StringComparison.Ordinal))
             {
                 return OpenSettingsFile(reveal: true);
@@ -433,6 +438,8 @@ internal sealed partial class UserCommandsSettingsForm : FormContent
 
     private void ApplyReloadedSettings()
     {
+        _pipelineDrafts.Clear();
+        _expandedStepIds.Clear();
         _draftInputs.Clear();
         _expandedCommandIds.Clear();
         _expandedProviderIds.Clear();
@@ -533,6 +540,13 @@ internal sealed partial class UserCommandsSettingsForm : FormContent
             command.RequestTemplateId = string.Empty;
         }
 
+        foreach (var step in commands.SelectMany(command => command.Steps)
+            .Where(step => string.Equals(step.RequestTemplateId, templateId, StringComparison.Ordinal) &&
+                !string.Equals(step.ProviderId, template.ProviderId, StringComparison.Ordinal)))
+        {
+            step.RequestTemplateId = string.Empty;
+        }
+
         return ValidateAndSaveRequestTemplates(templates, commands, template.Id);
     }
 
@@ -552,6 +566,12 @@ internal sealed partial class UserCommandsSettingsForm : FormContent
             string.Equals(command.RequestTemplateId, templateId, StringComparison.Ordinal)))
         {
             command.RequestTemplateId = string.Empty;
+        }
+
+        foreach (var step in commands.SelectMany(command => command.Steps)
+            .Where(step => string.Equals(step.RequestTemplateId, templateId, StringComparison.Ordinal)))
+        {
+            step.RequestTemplateId = string.Empty;
         }
 
         _requestTemplateStore.ReplaceAll(templates);
@@ -671,7 +691,8 @@ internal sealed partial class UserCommandsSettingsForm : FormContent
         }
 
         if (_store.GetCommands().Any(command =>
-            string.Equals(command.ProviderId, providerId, StringComparison.Ordinal)))
+            string.Equals(command.ProviderId, providerId, StringComparison.Ordinal) ||
+            command.Steps.Any(step => string.Equals(step.ProviderId, providerId, StringComparison.Ordinal))))
         {
             return ShowError("Assign commands to another provider before deleting this provider.");
         }
@@ -721,6 +742,14 @@ internal sealed partial class UserCommandsSettingsForm : FormContent
 
     private CommandResult Save(JsonObject input, string commandId)
     {
+        input = _draftInputs;
+        var existing = _store.GetCommands().FirstOrDefault(command => command.Id == commandId);
+        if (existing is not null && input[$"mode_{commandId}"] is not null &&
+            ReadText(input, $"mode_{commandId}") != GetPipelineDraft(existing).Mode.ToString())
+        {
+            EditPipeline($"pipeline:{commandId}:mode");
+        }
+
         var commands = _store.GetCommands().Select(command => command.Clone()).ToList();
         var command = commands.FirstOrDefault(
             command => string.Equals(command.Id, commandId, StringComparison.Ordinal));
@@ -730,6 +759,21 @@ internal sealed partial class UserCommandsSettingsForm : FormContent
         }
 
         command.Name = ReadText(input, $"name_{command.Id}", command.Name);
+        if (_pipelineDrafts.TryGetValue(commandId, out var pipelineDraft))
+        {
+            command.Mode = pipelineDraft.Mode;
+            command.Steps = pipelineDraft.Steps.Select(step => step.Clone()).ToList();
+        }
+
+        ReadStepInputs(command, _draftInputs);
+        if (command.Mode == CommandMode.Pipeline)
+        {
+            var stepError = ValidatePipeline(command);
+            if (stepError is not null)
+            {
+                return ShowError(stepError);
+            }
+        }
         command.OutputFormat = ReadText(input, $"format_{command.Id}", command.OutputFormat);
         command.CustomRequestArguments = ReadText(
             input,
@@ -925,7 +969,7 @@ internal sealed partial class UserCommandsSettingsForm : FormContent
             _globalSettingsStore.GetFileStatus(),
             _providerSettingsStore.GetProviders(),
             _requestTemplateStore.GetTemplates(),
-            _store.GetCommands(),
+            _store.GetCommands().Select(GetPipelineDraft).ToArray(),
             _globalSettingsExpanded,
             _expandedProviderIds,
             _expandedRequestTemplateIds,
@@ -944,12 +988,12 @@ internal sealed partial class UserCommandsSettingsForm : FormContent
         "Trimming",
         "IL2026",
         Justification = "The card builder adds only primitive values and explicit JsonNode instances.")]
-    private static JsonObject BuildCard(
+    private JsonObject BuildCard(
         GlobalSettings globalSettings,
         SettingsFileStatus settingsFileStatus,
         IReadOnlyList<LlmProviderSettings> providers,
         IReadOnlyList<JsonRequestTemplateDefinition> requestTemplates,
-        IReadOnlyList<UserCommandDefinition> commands,
+        UserCommandDefinition[] commands,
         bool expandedGlobalSettings,
         HashSet<string> expandedProviderIds,
         HashSet<string> expandedRequestTemplateIds,
@@ -966,8 +1010,16 @@ internal sealed partial class UserCommandsSettingsForm : FormContent
                 ["size"] = "Large",
                 ["weight"] = "Bolder",
             },
-            BuildGlobalSettingsEditor(globalSettings, expandedGlobalSettings, draftInputs),
             BuildSettingsFileActions(settingsFileStatus),
+            BuildSeparator(isSectionSeparator: true),
+            new JsonObject
+            {
+                ["type"] = "TextBlock",
+                ["text"] = "System steps",
+                ["size"] = "Large",
+                ["weight"] = "Bolder",
+            },
+            BuildAdvancedOutputSystemStepEditor(globalSettings, expandedGlobalSettings, draftInputs),
             BuildSeparator(isSectionSeparator: true),
             new JsonObject
             {
@@ -1087,7 +1139,7 @@ internal sealed partial class UserCommandsSettingsForm : FormContent
             ["wrap"] = true,
         });
 
-        if (commands.Count == 0)
+        if (commands.Length == 0)
         {
             body.Add(new JsonObject
             {
@@ -1158,7 +1210,7 @@ internal sealed partial class UserCommandsSettingsForm : FormContent
         "Trimming",
         "IL2026",
         Justification = "The card builder adds only primitive values and explicit JsonNode instances.")]
-    private static JsonObject BuildGlobalSettingsEditor(
+    private static JsonObject BuildAdvancedOutputSystemStepEditor(
         GlobalSettings settings,
         bool isExpanded,
         JsonObject draftInputs)
@@ -1176,6 +1228,7 @@ internal sealed partial class UserCommandsSettingsForm : FormContent
         return new JsonObject
         {
             ["type"] = "Container",
+            ["id"] = "system_step_advanced_output",
             ["style"] = "emphasis",
             ["spacing"] = "Medium",
             ["items"] = new JsonArray
@@ -1201,7 +1254,7 @@ internal sealed partial class UserCommandsSettingsForm : FormContent
                                         new JsonObject
                                         {
                                             ["type"] = "TextBlock",
-                                            ["text"] = "Advanced output system prompt",
+                                            ["text"] = "Advanced output format · System step",
                                             ["weight"] = "Bolder",
                                             ["wrap"] = true,
                                         },
@@ -1230,7 +1283,7 @@ internal sealed partial class UserCommandsSettingsForm : FormContent
                                                 BuildSubmitAction(
                                                     "✏",
                                                     "edit-global",
-                                                    "Edit global advanced output prompt",
+                                                    "Edit shared system-step prompt",
                                                     associatedInputs: "none"),
                                             },
                                         },
@@ -1257,7 +1310,7 @@ internal sealed partial class UserCommandsSettingsForm : FormContent
                         new JsonObject
                         {
                             ["type"] = "TextBlock",
-                            ["text"] = "Sent as a system message before the command prompt whenever advanced output is enabled. An empty value disables injection but keeps advanced response parsing enabled.",
+                            ["text"] = "This built-in step cannot be deleted. Its system prompt is shared by pipelines that include Advanced output format and by default-mode commands with both advanced output and Use global system prompt enabled. An empty value disables injection. In Pipeline mode, the advanced-output toggle controls parsing only; the formatting step sends the prompt.",
                             ["isSubtle"] = true,
                             ["wrap"] = true,
                             ["spacing"] = "Small",
@@ -1272,7 +1325,7 @@ internal sealed partial class UserCommandsSettingsForm : FormContent
                                     "Reset to default",
                                     "reset-global",
                                     associatedInputs: "none"),
-                                BuildSubmitAction("✓", "save-global", "Save global prompt"),
+                                BuildSubmitAction("✓", "save-global", "Save shared system-step prompt"),
                                 BuildSubmitAction(
                                     "✕",
                                     "cancel-global",
@@ -1718,7 +1771,7 @@ internal sealed partial class UserCommandsSettingsForm : FormContent
         "Trimming",
         "IL2026",
         Justification = "The card builder adds only primitive values and explicit JsonNode instances.")]
-    private static JsonObject BuildCommandEditor(
+    private JsonObject BuildCommandEditor(
         UserCommandDefinition command,
         IReadOnlyList<LlmProviderSettings> providers,
         IReadOnlyList<JsonRequestTemplateDefinition> requestTemplates,
@@ -1749,7 +1802,7 @@ internal sealed partial class UserCommandsSettingsForm : FormContent
             draftRequestTemplateId = string.Empty;
         }
 
-        return new JsonObject
+        var card = new JsonObject
         {
             ["type"] = "Container",
             ["style"] = "emphasis",
@@ -1793,7 +1846,7 @@ internal sealed partial class UserCommandsSettingsForm : FormContent
                                         new JsonObject
                                         {
                                             ["type"] = "TextBlock",
-                                            ["text"] = $"{GetExposureTitle(command.EffectiveExposure)} · {GetProviderName(command.ProviderId, providers)} · {GetRequestTemplateName(command.RequestTemplateId, requestTemplates)} · {command.SendDelayMilliseconds} ms{(string.IsNullOrWhiteSpace(command.CustomRequestArguments) ? string.Empty : " · Custom request arguments")}{(command.EnableAdvancedOutput ? " · Advanced output" : string.Empty)}{(command.EnableAdvancedOutput && !command.UseGlobalAdvancedOutputSystemPrompt ? " · Global prompt off" : string.Empty)}",
+                                            ["text"] = $"{GetExposureTitle(command.EffectiveExposure)} · {GetProviderName(command.ProviderId, providers)} · {GetRequestTemplateName(command.RequestTemplateId, requestTemplates)} · {command.SendDelayMilliseconds} ms{(string.IsNullOrWhiteSpace(command.CustomRequestArguments) ? string.Empty : " · Custom request arguments")}{(command.EnableAdvancedOutput ? " · Advanced output" : string.Empty)}",
                                             ["isSubtle"] = true,
                                             ["spacing"] = "Small",
                                         },
@@ -1907,9 +1960,7 @@ internal sealed partial class UserCommandsSettingsForm : FormContent
                                 $"advancedOutput_{command.Id}",
                                 command.EnableAdvancedOutput),
                             $"globalAdvancedOutputPrompt_{command.Id}",
-                            ReadBoolean(
-                                draftInputs,
-                                $"globalAdvancedOutputPrompt_{command.Id}",
+                            ReadBoolean(draftInputs, $"globalAdvancedOutputPrompt_{command.Id}",
                                 command.UseGlobalAdvancedOutputSystemPrompt)),
                         BuildSeparator(),
                         BuildNumberInput(
@@ -1949,6 +2000,8 @@ internal sealed partial class UserCommandsSettingsForm : FormContent
                 },
             },
         };
+        ConfigureCommandModeCard(card, command, providers, requestTemplates, draftInputs);
+        return card;
     }
 
     [UnconditionalSuppressMessage(
@@ -2141,7 +2194,7 @@ internal sealed partial class UserCommandsSettingsForm : FormContent
                 new JsonObject
                 {
                     ["type"] = "TextBlock",
-                    ["text"] = "Advanced output turns the model response into structured Command Palette results. When advanced output and the switch below are enabled, this command receives the advanced output system prompt configured in Global settings. Turn the switch off when the regular command prompt already tells the model to return the required JSON; if needed, system-style instructions can be included directly in Prompt format.",
+                    ["text"] = "In Default mode, advanced output controls result parsing and sends the shared system prompt when Use global system prompt is also enabled. Turn that switch off to supply JSON-format instructions directly in Prompt format. In Pipeline mode, only an Advanced output format step sends the system prompt; the advanced-output toggle controls parsing only.",
                     ["isSubtle"] = true,
                     ["wrap"] = true,
                 },
@@ -2192,10 +2245,7 @@ internal sealed partial class UserCommandsSettingsForm : FormContent
                         },
                     },
                 },
-                BuildToggleInput(
-                    globalPromptId,
-                    "Use global system prompt for advanced output",
-                    useGlobalPrompt),
+                BuildToggleInput(globalPromptId, "Use global system prompt for advanced output", useGlobalPrompt),
                 BuildAdvancedOutputHelp(helpId),
             },
         };
@@ -2242,7 +2292,7 @@ internal sealed partial class UserCommandsSettingsForm : FormContent
                 new JsonObject
                 {
                     ["type"] = "TextBlock",
-                    ["text"] = "Arrays preserve element order and may be empty. Invalid array elements appear as error results with their original JSON in details; root fallback results skip them and use the first valid object. A single unlabelled or json Markdown code fence is accepted. Other invalid formatted output uses the normal output rules. The global system prompt is configured in Global settings and can be disabled for this command.",
+                    ["text"] = "Arrays preserve element order and may be empty. Invalid array elements appear as error results with their original JSON in details; root fallback results skip them and use the first valid object. A single unlabelled or json Markdown code fence is accepted. Other invalid formatted output uses the normal output rules. Edit the shared prompt in the Advanced output format system-step card. Default-mode commands can inject it using their separate prompt toggle; pipelines inject it only through the formatting step.",
                     ["isSubtle"] = true,
                     ["wrap"] = true,
                 },
@@ -2326,6 +2376,21 @@ internal sealed partial class UserCommandsSettingsForm : FormContent
             if (!names.Add(command.Name))
             {
                 return $"Command names must be unique. '{command.Name}' is used more than once.";
+            }
+
+            if (command.Mode == CommandMode.Pipeline)
+            {
+                if (command.Steps.Count == 0 || !command.Steps.All(UserCommandStore.IsValidStep))
+                {
+                    return $"Command '{command.Name}' needs valid, named steps with a prompt and provider.";
+                }
+
+                if (command.SendDelayMilliseconds is < 0 or > 10_000)
+                {
+                    return $"Command '{command.Name}' must have a send delay between 0 and 10000 milliseconds.";
+                }
+
+                continue;
             }
 
             if (string.IsNullOrWhiteSpace(command.OutputFormat))
@@ -2481,6 +2546,16 @@ internal sealed partial class UserCommandsSettingsForm : FormContent
 
     private void RemoveDraftInputsForCommand(string commandId)
     {
+        _pipelineDrafts.Remove(commandId);
+        _expandedStepIds.RemoveWhere(id => id.StartsWith($"step_card_{commandId}_", StringComparison.Ordinal));
+        foreach (var key in _draftInputs.Select(property => property.Key)
+            .Where(key => key.StartsWith($"step_{commandId}_", StringComparison.Ordinal)).ToArray())
+        {
+            RemoveDraftInput(key);
+        }
+
+        RemoveDraftInput($"mode_{commandId}");
+        RemoveDraftInput($"newStepType_{commandId}");
         RemoveDraftInput($"name_{commandId}");
         RemoveDraftInput($"format_{commandId}");
         RemoveDraftInput($"requestArguments_{commandId}");
