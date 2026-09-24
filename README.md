@@ -25,11 +25,18 @@ Install Command Palette LLM from Microsoft Store using WinGet:
 winget install --id 9PK5TNWKQ00Q --source msstore
 ```
 
-After the community manifest is accepted, the human-readable WinGet package can be installed with:
+Alternatively, install the human-readable WinGet package from the community source:
 
 ```powershell
 winget install --id maxnevans.CommandPaletteLLM --source winget
 ```
+
+> [!WARNING]
+> Choose exactly one installation source: Microsoft Store or the community
+> WinGet repository. Do not install both variants, and do not update or upgrade
+> a package installed from one source using the other source. To switch sources,
+> export your settings, uninstall the current variant, and then install the other
+> variant.
 
 > [!CAUTION]
 > The community WinGet installer is unsigned. It uses a self-signed,
@@ -39,7 +46,7 @@ winget install --id maxnevans.CommandPaletteLLM --source winget
 > uninstall. Windows can still show a SmartScreen warning or block the installer
 > under organization policy.
 
-Microsoft PowerToys with Command Palette enabled is required. You can also use the [Microsoft Store listing](https://apps.microsoft.com/detail/9PK5TNWKQ00Q) or see the [user manual](docs/manual.md) for more information. Do not keep the Store and community WinGet variants installed at the same time.
+Microsoft PowerToys with Command Palette enabled is required. You can also use the [Microsoft Store listing](https://apps.microsoft.com/detail/9PK5TNWKQ00Q) or see the [user manual](docs/manual.md) for more information.
 
 The community installer blocks installation while the Microsoft Store package is present. Export settings from the Store version, uninstall it, and then install the community version.
 
