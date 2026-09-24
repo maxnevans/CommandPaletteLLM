@@ -43,6 +43,11 @@ to this repository or printed in a workflow log.
    Microsoft Store.
 6. Confirm that it is a free product. Microsoft's current Store Developer CLI
    documentation does not support this update flow for paid products.
+7. Confirm that the current `PRIVACY.md` text or its stable public URL is entered
+   as the product's privacy policy.
+8. Leave **Additional license terms** blank so Microsoft Store's Standard
+   Application License Terms apply to end-user installations. Supplying custom
+   terms replaces that default.
 
 Do not push a release tag until the remaining setup is complete. A tag push
 immediately starts the publication workflow.

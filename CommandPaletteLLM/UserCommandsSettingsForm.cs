@@ -1315,6 +1315,14 @@ internal sealed partial class UserCommandsSettingsForm : FormContent
                 ["text"] = "Connect one or more OpenAI-compatible chat-completions APIs, including llama.cpp servers.",
                 ["wrap"] = true,
             },
+            new JsonObject
+            {
+                ["type"] = "TextBlock",
+                ["text"] = "Model output may be inaccurate, incomplete, or unsafe. Review and verify it before use. You are responsible for the providers, prompts, output, and actions you take with it.",
+                ["isSubtle"] = true,
+                ["wrap"] = true,
+                ["spacing"] = "Small",
+            },
         };
 
         foreach (var provider in providers)
@@ -1932,7 +1940,7 @@ internal sealed partial class UserCommandsSettingsForm : FormContent
                         new JsonObject
                         {
                             ["type"] = "TextBlock",
-                            ["text"] = "Prompts are sent directly to this provider. Its operator may process or retain them under its own terms and privacy policy. API keys are protected for your Windows account.",
+                            ["text"] = "Prompts are sent directly to this provider. Its operator may process or retain them under its own terms and privacy policy. You are responsible for those terms, its charges, and the content you send. API keys are protected for your Windows account.",
                             ["isSubtle"] = true,
                             ["wrap"] = true,
                             ["spacing"] = "Small",

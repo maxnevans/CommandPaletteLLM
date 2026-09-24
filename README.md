@@ -307,6 +307,26 @@ assigned to the command, and a non-local provider must be explicitly authorized
 in settings before the extension contacts it. The extension has no separate
 telemetry or cloud backend. See [PRIVACY.md](PRIVACY.md) for the full data flow.
 
+## Responsible use and disclaimer
+
+Command Palette LLM is a general-purpose interface to language-model providers.
+It does not verify or endorse provider responses. Model output may be inaccurate,
+incomplete, misleading, unsafe, or unsuitable for its intended purpose. Review
+and independently verify output before relying on it, especially for
+safety-critical, legal, medical, financial, or security decisions.
+
+You are responsible for the prompts, providers, models, endpoints, credentials,
+and request settings you configure; for provider terms, privacy practices,
+availability, and charges; for complying with applicable laws and third-party
+rights; and for how you use generated output or act on it. Do not use the
+application to violate the law or harm others.
+
+To the fullest extent permitted by applicable law, the publisher is not
+responsible for loss, damage, claims, costs, or other consequences resulting
+from use of the application, configured services, generated output, or actions
+taken based on that output. This notice does not exclude liability that cannot
+lawfully be excluded.
+
 ## Publish a Microsoft Store and WinGet release
 
 The package uses the Partner Center identity reserved for this product:
@@ -338,6 +358,12 @@ for the complete setup, verification, release, and troubleshooting procedure:
    secrets.
 4. Add the Partner Center product ID as a GitHub Actions repository variable
    named `STORE_PRODUCT_ID`.
+
+Keep the privacy policy current in Partner Center. Leave **Additional license
+terms** blank so Microsoft Store's Standard Application License Terms apply to
+end-user installations; supplying custom terms replaces that default. Store
+distribution is the only maintained end-user installation path for this
+project.
 
 Create the next release tag locally with the PowerShell script:
 
@@ -411,7 +437,4 @@ CommandPaletteLLM.sln
 ## License
 
 Copyright © 2026 maxnevans. The source code is proprietary; viewing it does not
-grant permission to use, copy, modify, compile, or distribute it. Official
-compiled binaries may be used for personal, educational, charitable, and
-nonprofit purposes under [BINARY-LICENSE.txt](BINARY-LICENSE.txt). Commercial
-and for-profit use is not permitted without separate authorization.
+grant permission to use, copy, modify, compile, or distribute it.

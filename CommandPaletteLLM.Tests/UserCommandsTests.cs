@@ -1041,6 +1041,18 @@ public sealed class UserCommandsTests
     }
 
     [Fact]
+    public void Settings_ShowsModelOutputAndUserResponsibilityNotice()
+    {
+        var provider = new CommandPaletteLLMCommandsProvider(
+            new UserCommandStore(filePath: null),
+            new LlmProviderSettingsStore(filePath: null));
+        var form = GetSettingsForm(provider);
+
+        Assert.Contains("Model output may be inaccurate, incomplete, or unsafe", form.TemplateJson, StringComparison.Ordinal);
+        Assert.Contains("You are responsible for the providers, prompts, output, and actions", form.TemplateJson, StringComparison.Ordinal);
+    }
+
+    [Fact]
     public void Settings_SavesProviderWithoutRedisplayingApiKey()
     {
         var commandStore = new UserCommandStore(filePath: null);
@@ -1060,6 +1072,7 @@ public sealed class UserCommandsTests
         Assert.DoesNotContain("secret", form.TemplateJson, StringComparison.Ordinal);
         Assert.Contains("Saved; leave blank to keep it", form.TemplateJson, StringComparison.Ordinal);
         Assert.Contains("Prompts are sent directly to this provider", form.TemplateJson, StringComparison.Ordinal);
+        Assert.Contains("You are responsible for those terms, its charges, and the content you send", form.TemplateJson, StringComparison.Ordinal);
         Assert.DoesNotContain("providerRemoteConsent", form.TemplateJson, StringComparison.Ordinal);
         Assert.DoesNotContain("[Privacy policy]", form.TemplateJson, StringComparison.Ordinal);
     }
