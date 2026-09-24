@@ -105,3 +105,35 @@ begin
   DeleteFile(ExpandConstant('{tmp}\CommandPaletteLLM.sparse.success'));
   DeleteFile(ExpandConstant('{tmp}\CommandPaletteLLM.sparse.error'));
 end;
+
+function PrepareToInstall(var NeedsRestart: Boolean): String;
+var
+  ResultCode: Integer;
+  PowerShellArguments: String;
+begin
+  Result := '';
+  PowerShellArguments := '-NoLogo -NoProfile -NonInteractive -ExecutionPolicy Bypass ' +
+    '-Command "$package = Get-AppxPackage -Name ''maxnevans.CommandPaletteLLM'' -ErrorAction SilentlyContinue; ' +
+    'if ($null -ne $package) { exit 10 }"';
+
+  if not Exec(
+    ExpandConstant('{sys}\WindowsPowerShell\v1.0\powershell.exe'),
+    PowerShellArguments,
+    '',
+    SW_HIDE,
+    ewWaitUntilTerminated,
+    ResultCode) then
+  begin
+    Result := 'Setup could not check for an existing Microsoft Store installation.';
+    Exit;
+  end;
+
+  if ResultCode = 10 then
+  begin
+    Result := 'The Microsoft Store version of Command Palette LLM is already installed.' + #13#10 + #13#10 +
+      'Open its settings and export your configuration, uninstall the Store version, and then run this installer again. ' +
+      'The Store and community versions cannot be installed together.';
+  end
+  else if ResultCode <> 0 then
+    Result := Format('Setup could not check for an existing Microsoft Store installation (PowerShell exit code %d).', [ResultCode]);
+end;

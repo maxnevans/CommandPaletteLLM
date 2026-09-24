@@ -33,7 +33,7 @@ winget install --id maxnevans.CommandPaletteLLM --source winget
 > **Unknown publisher**, display a SmartScreen warning, or block the outer
 > installer under policy. The Microsoft Store package is signed by Microsoft.
 
-Use one distribution channel at a time. Export settings before switching, uninstall the existing variant, install the other variant, and import the backup.
+Use one distribution channel at a time. The community installer blocks installation while the Store package is present. Export settings before switching, uninstall the existing variant, install the other variant, and import the backup.
 
 ## Configure a provider
 

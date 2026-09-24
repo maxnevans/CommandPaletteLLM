@@ -109,6 +109,8 @@ Test on a clean Windows 11 VM:
 6. Confirm `Get-AppxPackage` no longer returns the sparse package.
 7. Confirm the `CN=CommandPaletteLLM Community Package` certificate is no longer present under **Local Computer → Trusted People**.
 
+Also install the Store version temporarily and confirm that the community installer stops before copying files, instructs the user to export settings, and requires the Store version to be uninstalled first.
+
 ## Publish a GitHub Release
 
 Create the next annotated tag with the release-tag script:

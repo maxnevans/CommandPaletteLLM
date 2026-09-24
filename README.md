@@ -41,6 +41,8 @@ winget install --id maxnevans.CommandPaletteLLM --source winget
 
 Microsoft PowerToys with Command Palette enabled is required. You can also use the [Microsoft Store listing](https://apps.microsoft.com/detail/9PK5TNWKQ00Q) or see the [user manual](docs/manual.md) for more information. Do not keep the Store and community WinGet variants installed at the same time.
 
+The community installer blocks installation while the Microsoft Store package is present. Export settings from the Store version, uninstall it, and then install the community version.
+
 ## Features
 
 - Create and edit commands without changing code.
