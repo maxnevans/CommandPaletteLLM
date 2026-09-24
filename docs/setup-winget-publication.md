@@ -132,7 +132,7 @@ Inspect the tagged commit and push the exact tag printed by the script, for exam
 git push origin v1.2.3
 ```
 
-The Store and WinGet workflows start independently from the same tag. The WinGet workflow creates the GitHub Release if it does not exist, or uploads the installers to the existing release.
+The Store and WinGet workflows start independently from the same tag. The WinGet workflow creates the GitHub Release if it does not exist, or uploads the installers to an existing release only when neither versioned installer asset is already present.
 
 For `v1.2.3`, the immutable installer URLs are:
 
@@ -151,6 +151,8 @@ After the workflow completes:
 6. Download them and recompute their hashes if preparing a manifest manually.
 
 Never replace a release installer after its WinGet manifest is submitted. WinGet pins the exact SHA-256 value; publish a new version instead.
+
+The WinGet workflow enforces this rule for its versioned installer assets. If a release already contains either expected x64 or ARM64 installer, rerunning the workflow for that tag fails before the build starts. The final release upload also refuses to overwrite an existing asset. Create and push a new `vMajor.Minor.Patch` tag for every changed installer.
 
 ## Submit the first community WinGet manifest
 

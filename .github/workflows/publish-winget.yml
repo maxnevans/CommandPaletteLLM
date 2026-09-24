@@ -48,6 +48,34 @@ jobs:
 
           "version=$($parts -join '.')" >> $env:GITHUB_OUTPUT
 
+      - name: Refuse to overwrite published installers
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          $tag = "${{ github.ref_name }}"
+          $version = "${{ steps.version.outputs.version }}"
+          $expectedAssetNames = @(
+              "CommandPaletteLLM-Setup-$version-x64.exe"
+              "CommandPaletteLLM-Setup-$version-arm64.exe"
+          )
+
+          $releaseJson = gh release view $tag `
+              --repo "${{ github.repository }}" `
+              --json assets 2>$null
+          if ($LASTEXITCODE -ne 0) {
+              Write-Host "No existing GitHub Release was found for '$tag'."
+              exit 0
+          }
+
+          $release = $releaseJson | ConvertFrom-Json
+          $existingAssetNames = @($release.assets | ForEach-Object { $_.name })
+          $conflicts = @($expectedAssetNames | Where-Object { $existingAssetNames -contains $_ })
+          if ($conflicts.Count -ne 0) {
+              $conflictList = $conflicts -join ', '
+              throw "Release '$tag' already contains immutable installer asset(s): $conflictList. Do not rebuild or replace a published installer; publish a new version tag instead."
+          }
+
       - name: Install .NET SDK
         uses: actions/setup-dotnet@v4
         with:
@@ -118,7 +146,7 @@ jobs:
           path: artifacts/winget/installer/*.exe
           if-no-files-found: error
 
-      - name: Create or update GitHub release
+      - name: Create GitHub release or upload new assets
         shell: pwsh
         env:
           GH_TOKEN: ${{ github.token }}
@@ -129,7 +157,7 @@ jobs:
 
           gh release view $tag --repo "${{ github.repository }}" *> $null
           if ($LASTEXITCODE -eq 0) {
-              gh release upload $tag @paths --clobber --repo "${{ github.repository }}"
+              gh release upload $tag @paths --repo "${{ github.repository }}"
           }
           else {
               gh release create $tag @paths `
