@@ -9,13 +9,19 @@
     <TargetPlatformMinVersion>10.0.22000.0</TargetPlatformMinVersion>
     <SupportedOSPlatformVersion>10.0.22000.0</SupportedOSPlatformVersion>
     <RuntimeIdentifiers>win-x64;win-arm64</RuntimeIdentifiers>
-    <PublishProfile>win-$(Platform).pubxml</PublishProfile>
-    <EnableMsixTooling>true</EnableMsixTooling>
+    <PublishProfile Condition="'$(WinGetPackage)' != 'true'">win-$(Platform).pubxml</PublishProfile>
+    <EnableMsixTooling Condition="'$(WinGetPackage)' != 'true'">true</EnableMsixTooling>
     <DefaultLanguage>en-US</DefaultLanguage>
     <AppxPackageIdentityName>maxnevans.CommandPaletteLLM</AppxPackageIdentityName>
     <AppxPackagePublisher>CN=D8B7BDC7-1445-4AE6-BEEC-E9C2D0FD7ACD</AppxPackagePublisher>
     <AppxPackageVersion>0.0.1.0</AppxPackageVersion>
     <Nullable>enable</Nullable>
+  </PropertyGroup>
+
+  <PropertyGroup Condition="'$(WinGetPackage)' == 'true'">
+    <WindowsPackageType>None</WindowsPackageType>
+    <EnableMsixTooling>false</EnableMsixTooling>
+    <GenerateAppxPackageOnBuild>false</GenerateAppxPackageOnBuild>
   </PropertyGroup>
 
   <PropertyGroup Condition="'$(Configuration)' == 'Debug'">

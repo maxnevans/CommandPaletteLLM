@@ -19,6 +19,20 @@ winget install --id 9PK5TNWKQ00Q --source msstore
 
 The same signed Store package is available from the [Microsoft Store listing](https://apps.microsoft.com/detail/9PK5TNWKQ00Q). Microsoft PowerToys with Command Palette enabled is required separately.
 
+After the community manifest is accepted, an unsigned GitHub installer is available through WinGet's community source under the human-readable identifier:
+
+```powershell
+winget install --id maxnevans.CommandPaletteLLM --source winget
+```
+
+> [!CAUTION]
+> The community installer is unsigned. Windows may show **Unknown publisher**,
+> display a Microsoft Defender SmartScreen warning, or block it under Smart App
+> Control or organization policy. The Microsoft Store package is signed by
+> Microsoft and is the recommended choice when those restrictions apply.
+
+Use one distribution channel at a time. Export settings before switching, uninstall the existing variant, install the other variant, and import the backup.
+
 ## Configure a provider
 
 Open the **Command Palette LLM** extension settings and expand **LLM providers**. The initial provider is ready for a typical local llama.cpp server:
