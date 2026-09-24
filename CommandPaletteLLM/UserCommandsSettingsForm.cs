@@ -1738,6 +1738,14 @@ internal sealed partial class UserCommandsSettingsForm : FormContent
                 new JsonObject
                 {
                     ["type"] = "TextBlock",
+                    ["text"] = "Alpha / pre-release: updates may change the settings format without backward compatibility. Export your settings before updating and keep the backup in a safe place; manual migration may be required.",
+                    ["color"] = "Warning",
+                    ["spacing"] = "Small",
+                    ["wrap"] = true,
+                },
+                new JsonObject
+                {
+                    ["type"] = "TextBlock",
                     ["text"] = statusText,
                     ["color"] = status.Exists ? "Good" : "Warning",
                     ["spacing"] = "Small",

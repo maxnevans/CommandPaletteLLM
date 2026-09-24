@@ -10,6 +10,13 @@
 
 Command Palette LLM is a Windows Command Palette extension for creating small, focused AI tools: summarize selected text, rewrite a sentence, generate several alternatives, classify input into rich results, or build any other prompt-driven command you need. It works with local servers such as llama.cpp as well as hosted services that expose an OpenAI-compatible Chat Completions API.
 
+> [!WARNING]
+> **Alpha / pre-release software:** Command Palette LLM is not a stable release.
+> Features, behavior, and the settings format may change without backward
+> compatibility. Before updating, use **Settings → Export** and keep the
+> exported file in a safe place. A future alpha version may require manual
+> settings migration even when a backup is available.
+
 ## Install with WinGet
 
 Command Palette LLM is published in Microsoft Store and can be installed through

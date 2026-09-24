@@ -48,6 +48,9 @@ to this repository or printed in a workflow log.
 8. Leave **Additional license terms** blank so Microsoft Store's Standard
    Application License Terms apply to end-user installations. Supplying custom
    terms replaces that default.
+9. Confirm that the Store description clearly identifies the app as alpha or
+   pre-release software, warns that updates may not preserve settings
+   compatibility, and tells users to export a backup before updating.
 
 Do not push a release tag until the remaining setup is complete. A tag push
 immediately starts the publication workflow.

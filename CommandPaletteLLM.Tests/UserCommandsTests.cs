@@ -249,6 +249,10 @@ public sealed class UserCommandsTests
                 "\"text\":\"Settings\",\"weight\":\"Bolder\"",
                 form.TemplateJson,
                 StringComparison.Ordinal);
+            Assert.Contains("Alpha / pre-release", form.TemplateJson, StringComparison.Ordinal);
+            Assert.Contains("without backward compatibility", form.TemplateJson, StringComparison.Ordinal);
+            Assert.Contains("Export your settings before updating", form.TemplateJson, StringComparison.Ordinal);
+            Assert.Contains("manual migration may be required", form.TemplateJson, StringComparison.Ordinal);
             Assert.Contains("\\u26A0 Not created yet", form.TemplateJson, StringComparison.Ordinal);
             Assert.Contains("\"isEnabled\":false", form.TemplateJson, StringComparison.Ordinal);
             Assert.DoesNotContain(
