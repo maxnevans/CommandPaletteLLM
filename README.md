@@ -297,7 +297,7 @@ assigned to the command, and a non-local provider must be explicitly authorized
 in settings before the extension contacts it. The extension has no separate
 telemetry or cloud backend. See [PRIVACY.md](PRIVACY.md) for the full data flow.
 
-## Build a Microsoft Store submission
+## Publish a Microsoft Store release
 
 The package uses the Partner Center identity reserved for this product:
 
@@ -307,47 +307,51 @@ Publisher:            CN=D8B7BDC7-1445-4AE6-BEEC-E9C2D0FD7ACD
 PublisherDisplayName: maxnevans
 ```
 
-Visual Studio 2026 exposes packaging as **Pack** on the project context menu.
-The selected solution configuration and platform determine which package it
-creates. Prepare Store packages as follows:
+The [Store publishing workflow](.github/workflows/publish-store.yml) runs when a
+tag named `vMajor.Minor.Patch` is pushed. It tests the tagged commit, maps the
+tag to the four-part MSIX version `Major.Minor.Patch.0`, builds one unsigned
+x64/ARM64 `.msixupload` bundle, saves that bundle as a workflow artifact, and
+submits it to Partner Center for certification.
 
-1. Confirm that the package identity above still exactly matches **Partner Center → Command Palette LLM → Product management → Product identity**. The values are case-sensitive.
-2. Set the package version in `CommandPaletteLLM\Package.appxmanifest`. Use four numeric components, keep the final component `0`, and choose a version higher than the previous Store submission.
-3. In the Visual Studio toolbar, select **Release** and **x64**.
-4. In Solution Explorer, right-click the `CommandPaletteLLM` project and select **Pack**.
-5. Confirm that the build log ends with `PackageSuccessfullyCreated` and names `CommandPaletteLLM\AppPackages\CommandPaletteLLM_<version>_x64.msixupload`.
-6. Change the toolbar platform to **ARM64** and select **Pack** again. Confirm that `CommandPaletteLLM_<version>_arm64.msixupload` was created in the same directory.
-7. Upload both top-level `.msixupload` files under **Partner Center → Command Palette LLM → Product release → Start submission → Packages**. Partner Center selects the applicable architecture for each device.
+Partner Center and the GitHub repository require one-time configuration before
+the workflow can publish. See the
+[step-by-step automatic Store publication guide](docs/setup-automatic-ms-store-publication-from-github-tag.md)
+for the complete setup, verification, release, and troubleshooting procedure:
 
-The Release settings in `CommandPaletteLLM.csproj` select `StoreOnly` packaging,
-create a separate upload for each architecture, and leave signing disabled so
-Microsoft Store can sign the certified packages. Do not upload files from an
-`*_Test` directory. Those directories contain local sideloading artifacts and
-installation scripts. Likewise, a filename containing `_Debug` was built with
-the development package identity and is not a Store submission.
+1. Publish the product manually at least once and confirm that the package
+   identity above exactly matches **Partner Center → Command Palette LLM →
+   Product management → Product identity**.
+2. Associate a Microsoft Entra application with the Partner Center account and
+   grant it the **Manager** role.
+3. Add `AZURE_AD_TENANT_ID`, `AZURE_AD_APPLICATION_CLIENT_ID`,
+   `AZURE_AD_APPLICATION_SECRET`, and `SELLER_ID` as GitHub Actions repository
+   secrets.
+4. Add the Partner Center product ID as a GitHub Actions repository variable
+   named `STORE_PRODUCT_ID`.
 
-The expected output directory after preparing both architectures is:
+Create the next release tag locally with the PowerShell script:
 
-```text
-CommandPaletteLLM/AppPackages/
-├── CommandPaletteLLM_<version>_x64.msixupload
-├── CommandPaletteLLM_<version>_arm64.msixupload
-├── CommandPaletteLLM_<version>_x64_Test/       Local test artifacts
-└── CommandPaletteLLM_<version>_arm64_Test/     Local test artifacts
+```powershell
+# Increment patch, for example v1.2.3 -> v1.2.4
+.\scripts\New-ReleaseTag.ps1
+
+# Increment minor and reset patch, for example v1.2.3 -> v1.3.0
+.\scripts\New-ReleaseTag.ps1 -Minor
+
+# Increment major and reset minor/patch, for example v1.2.3 -> v2.0.0
+.\scripts\New-ReleaseTag.ps1 -Major
 ```
 
-Before uploading, install and exercise the x64 test package on an x64 system,
-test the ARM64 package on ARM64 hardware when available, and run the current
-Windows App Certification Kit. The `AppPackages` and `BundleArtifacts`
+The script creates an annotated tag on `HEAD` but does not push it. Review the
+tagged commit, then explicitly start publishing with the command printed by the
+script, such as `git push origin v1.2.4`. If no release tag exists yet, the
+script uses the version in `Directory.Build.props` as its starting point.
+
+Before pushing a release tag, install and exercise a local x64 package, test on
+ARM64 hardware when available, and run the current Windows App Certification
+Kit. Microsoft Store signs the submitted package and makes it available only
+after certification completes. The `AppPackages` and `BundleArtifacts`
 directories are generated output and must remain uncommitted.
-
-Microsoft signs the package after certification. Complete Pricing and availability, Properties, Age ratings, Store listings, and Submission options before selecting **Submit for certification**.
-
-The Store listing and certification notes must explain that this is an extension requiring Microsoft PowerToys with Command Palette enabled. Include instructions for opening Command Palette and exercising at least one configured LLM command so certification can test the extension.
-
-The public preview version is `0.0.1`; its Store package version is `0.0.1.0`.
-The fourth component is required by the MSIX package identity format and is
-kept at zero for Store submissions.
 
 Store distribution is the only maintained end-user installation path. The repository does not produce or support a private, self-signed, or unsigned installer.
 
