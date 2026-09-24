@@ -32,10 +32,12 @@ winget install --id maxnevans.CommandPaletteLLM --source winget
 ```
 
 > [!CAUTION]
-> The community WinGet installer is unsigned. Windows may identify its publisher
-> as unknown, show a Microsoft Defender SmartScreen warning, or block it under
-> Smart App Control or organization policy. Use the Microsoft Store package if
-> you require a Microsoft-signed installation.
+> The community WinGet installer is unsigned. It uses a self-signed,
+> metadata-only sparse package to register the identity Command Palette needs
+> for discovery. Setup requests administrator approval to trust that package
+> certificate in Windows' machine-wide Trusted People store and removes it on
+> uninstall. Windows can still show a SmartScreen warning or block the installer
+> under organization policy.
 
 Microsoft PowerToys with Command Palette enabled is required. You can also use the [Microsoft Store listing](https://apps.microsoft.com/detail/9PK5TNWKQ00Q) or see the [user manual](docs/manual.md) for more information. Do not keep the Store and community WinGet variants installed at the same time.
 

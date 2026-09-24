@@ -11,13 +11,13 @@ PublisherDisplayName: maxnevans
 Two workflows run when a tag named `vMajor.Minor.Patch` is pushed:
 
 - The [Store publishing workflow](../.github/workflows/publish-store.yml) tests the tagged commit, maps the tag to the four-part MSIX version `Major.Minor.Patch.0`, builds one unsigned x64/ARM64 `.msixupload` bundle, saves it as a workflow artifact, and submits it to Partner Center for certification.
-- The [WinGet installer workflow](../.github/workflows/publish-winget.yml) builds unpackaged x64 and ARM64 applications, creates unsigned per-user Inno Setup installers, verifies that they are unsigned, and attaches both installers to the matching GitHub Release.
+- The [WinGet installer workflow](../.github/workflows/publish-winget.yml) builds unpackaged x64 and ARM64 applications, creates self-signed metadata-only sparse packages for Command Palette discovery, wraps each result in an unsigned elevated Inno Setup installer, and attaches both installers to the matching GitHub Release.
 
 ## Configure publishing
 
-Partner Center and the GitHub repository require one-time configuration before the Store workflow can publish. The unsigned WinGet installer workflow requires no additional secrets or external signing service.
+Partner Center and the GitHub repository require one-time configuration before the Store workflow can publish. The WinGet workflow requires no signing account, paid certificate, or additional secret; it generates a temporary self-signed package certificate and deletes its private key after signing. Its installer requires elevation to trust the public certificate machine-wide.
 
-See the [automatic Store publication guide](setup-automatic-ms-store-publication-from-github-tag.md) for the Store setup, and the [Command Palette WinGet publication guide](setup-winget-publication.md) for unsigned installers, GitHub Releases, their security tradeoffs, and the first community-manifest submission.
+See the [automatic Store publication guide](setup-automatic-ms-store-publication-from-github-tag.md) for the Store setup, and the [Command Palette WinGet publication guide](setup-winget-publication.md) for sparse identity registration, GitHub Releases, and the first community-manifest submission.
 
 For Store publication:
 
@@ -45,7 +45,7 @@ Create the next release tag locally with the PowerShell script:
 
 Run these commands from the repository root. The script creates an annotated tag on `HEAD` but does not push it. Review the tagged commit, then explicitly start publishing with the command printed by the script, such as `git push origin v1.2.4`. If no release tag exists yet, the script uses the version in [`Directory.Build.props`](../Directory.Build.props) as its starting point.
 
-Before pushing a release tag, install and exercise a local x64 package and WinGet installer, test on ARM64 hardware when available, and run the current Windows App Certification Kit. Microsoft Store signs the submitted package and makes it available only after certification completes. The `AppPackages`, `BundleArtifacts`, and `artifacts` directories are generated output and must remain uncommitted.
+Before pushing a release tag, install and exercise a local x64 package and WinGet installer, verify sparse-package discovery and uninstall cleanup, test on ARM64 hardware when available, and run the current Windows App Certification Kit. Microsoft Store signs the submitted Store package after certification. The community installer remains unsigned. The `AppPackages`, `BundleArtifacts`, and `artifacts` directories are generated output and must remain uncommitted.
 
 ## Verify the published release
 
@@ -56,4 +56,4 @@ winget show --id 9PK5TNWKQ00Q --source msstore
 winget show --id maxnevans.CommandPaletteLLM --source winget
 ```
 
-The two identifiers represent separate distribution channels. The Store source retains Microsoft's opaque product ID and may report an unknown version; the community source provides the human-readable ID and version from its manifest. GitHub and community-WinGet installers are intentionally unsigned and can trigger SmartScreen or be blocked by system policy. The Microsoft Store package remains the trusted, Microsoft-signed installation path.
+The two identifiers represent separate distribution channels. The Store source retains Microsoft's opaque product ID and may report an unknown version; the community source provides the human-readable ID and version from its manifest. The Store package is signed by Microsoft. The community installer is unsigned and uses a self-signed metadata-only sparse package to make the extension discoverable.

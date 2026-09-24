@@ -63,7 +63,7 @@ jobs:
         shell: pwsh
         run: choco install innosetup --yes --no-progress
 
-      - name: Stage unpackaged applications
+      - name: Stage applications and sparse identity packages
         shell: pwsh
         run: >-
           .\scripts\Build-WinGetInstaller.ps1
@@ -78,6 +78,23 @@ jobs:
           -Version "${{ steps.version.outputs.version }}"
           -Platforms all
           -PackageOnly
+
+      - name: Verify sparse package signatures
+        shell: pwsh
+        run: |
+          foreach ($platform in 'win-x64', 'win-arm64') {
+              $directory = Join-Path "$env:GITHUB_WORKSPACE\$env:WINGET_OUTPUT\publish" $platform
+              $packagePath = Join-Path $directory 'CommandPaletteLLM.identity.msix'
+              $certificatePath = Join-Path $directory 'CommandPaletteLLM.identity.cer'
+              $certificate = [System.Security.Cryptography.X509Certificates.X509Certificate2]::new($certificatePath)
+              $signature = Get-AuthenticodeSignature -LiteralPath $packagePath
+
+              if ($null -eq $signature.SignerCertificate -or
+                  $signature.SignerCertificate.Thumbprint -ne $certificate.Thumbprint -or
+                  $certificate.Subject -ne 'CN=CommandPaletteLLM Community Package') {
+                  throw "The $platform sparse package signature does not match its public certificate."
+              }
+          }
 
       - name: Verify unsigned installers
         shell: pwsh

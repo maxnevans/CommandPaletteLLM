@@ -23,6 +23,26 @@ if ($StageOnly -and $PackageOnly) {
 $repositoryRoot = Split-Path -Parent $PSScriptRoot
 $projectPath = Join-Path $repositoryRoot 'CommandPaletteLLM\CommandPaletteLLM.csproj'
 $installerScript = Join-Path $repositoryRoot 'installer\CommandPaletteLLM.iss'
+$sparseManifestSource = Join-Path $repositoryRoot 'installer\Package.Sparse.appxmanifest'
+$fusionManifestSource = Join-Path $repositoryRoot 'CommandPaletteLLM\app.WinGet.manifest'
+
+$identityPublisher = 'CN=CommandPaletteLLM Community Package'
+[xml] $sparseManifestTemplate = Get-Content -Raw -LiteralPath $sparseManifestSource
+[xml] $fusionManifest = Get-Content -Raw -LiteralPath $fusionManifestSource
+$fusionNamespaces = [System.Xml.XmlNamespaceManager]::new($fusionManifest.NameTable)
+$fusionNamespaces.AddNamespace('asm', 'urn:schemas-microsoft-com:asm.v1')
+$fusionNamespaces.AddNamespace('msix', 'urn:schemas-microsoft-com:msix.v1')
+$fusionIdentity = $fusionManifest.SelectSingleNode('/asm:assembly/msix:msix', $fusionNamespaces)
+$sparseIdentity = $sparseManifestTemplate.Package.Identity
+$sparseApplication = $sparseManifestTemplate.Package.Applications.Application
+
+if ($null -eq $fusionIdentity -or
+    $sparseIdentity.Publisher -ne $identityPublisher -or
+    $fusionIdentity.publisher -ne $sparseIdentity.Publisher -or
+    $fusionIdentity.packageName -ne $sparseIdentity.Name -or
+    $fusionIdentity.applicationId -ne $sparseApplication.Id) {
+    throw 'The executable and sparse package identities do not match the community package identity.'
+}
 
 if ([string]::IsNullOrWhiteSpace($Version)) {
     $releaseTag = & git -C $repositoryRoot describe --tags --abbrev=0 --match 'v[0-9]*.[0-9]*.[0-9]*' 2>$null
@@ -71,49 +91,124 @@ if ([string]::IsNullOrWhiteSpace($OutputRoot)) {
 
 $OutputRoot = [System.IO.Path]::GetFullPath($OutputRoot)
 $publishRoot = Join-Path $OutputRoot 'publish'
+$intermediateRoot = Join-Path $OutputRoot 'intermediate'
 $installerOutput = Join-Path $OutputRoot 'installer'
+$fileVersion = "$Version.0"
 
 $components = $Version.Split('.') | ForEach-Object { [int] $_ }
 if (@($components | Where-Object { $_ -gt 65535 }).Count -ne 0) {
     throw "Version '$Version' cannot be represented as a Windows file version."
 }
 
-$fileVersion = "$Version.0"
-
 if (-not $PackageOnly) {
-    foreach ($platform in $Platforms) {
-        $runtimeIdentifier = "win-$platform"
-        $publishDirectory = Join-Path $publishRoot $runtimeIdentifier
+    $sdkBinRoot = Join-Path ${env:ProgramFiles(x86)} 'Windows Kits\10\bin'
+    $sdkVersionDirectories = Get-ChildItem -LiteralPath $sdkBinRoot -Directory -ErrorAction SilentlyContinue |
+        Where-Object { $_.Name -match '^\d+\.\d+\.\d+\.\d+$' } |
+        Sort-Object { [version] $_.Name } -Descending
 
-        if (Test-Path -LiteralPath $publishDirectory) {
-            Remove-Item -LiteralPath $publishDirectory -Recurse -Force
+    $makeAppxCommand = Get-Command makeappx.exe -ErrorAction SilentlyContinue
+    $makeAppx = if ($null -ne $makeAppxCommand) {
+        $makeAppxCommand.Source
+    }
+    else {
+        $sdkVersionDirectories |
+            ForEach-Object { Join-Path $_.FullName 'x64\makeappx.exe' } |
+            Where-Object { Test-Path -LiteralPath $_ -PathType Leaf } |
+            Select-Object -First 1
+    }
+
+    if ([string]::IsNullOrWhiteSpace($makeAppx)) {
+        throw 'MakeAppx.exe was not found. Install the Windows SDK MSIX tools.'
+    }
+
+    $signToolCommand = Get-Command signtool.exe -ErrorAction SilentlyContinue
+    $signTool = if ($null -ne $signToolCommand) {
+        $signToolCommand.Source
+    }
+    else {
+        $sdkVersionDirectories |
+            ForEach-Object { Join-Path $_.FullName 'x64\signtool.exe' } |
+            Where-Object { Test-Path -LiteralPath $_ -PathType Leaf } |
+            Select-Object -First 1
+    }
+
+    if ([string]::IsNullOrWhiteSpace($signTool)) {
+        throw 'SignTool.exe was not found. Install the Windows SDK signing tools.'
+    }
+
+    $buildCertificate = New-SelfSignedCertificate `
+        -Type CodeSigningCert `
+        -Subject $identityPublisher `
+        -CertStoreLocation 'Cert:\CurrentUser\My' `
+        -KeyAlgorithm RSA `
+        -KeyLength 2048 `
+        -HashAlgorithm SHA256 `
+        -KeyExportPolicy NonExportable `
+        -NotAfter (Get-Date).AddYears(10)
+
+    try {
+        foreach ($platform in $Platforms) {
+            $runtimeIdentifier = "win-$platform"
+            $publishDirectory = Join-Path $publishRoot $runtimeIdentifier
+            $sparseDirectory = Join-Path $intermediateRoot "sparse-$platform"
+
+            if (Test-Path -LiteralPath $publishDirectory) {
+                Remove-Item -LiteralPath $publishDirectory -Recurse -Force
+            }
+
+            if (Test-Path -LiteralPath $sparseDirectory) {
+                Remove-Item -LiteralPath $sparseDirectory -Recurse -Force
+            }
+
+            New-Item -ItemType Directory -Path $publishDirectory -Force | Out-Null
+            New-Item -ItemType Directory -Path $sparseDirectory -Force | Out-Null
+
+            $publishArguments = @(
+                'publish'
+                $projectPath
+                '--configuration', 'Release'
+                '--runtime', $runtimeIdentifier
+                '--self-contained', 'true'
+                '--output', $publishDirectory
+                "-p:Platform=$platform"
+                '-p:WinGetPackage=true'
+                "-p:Version=$Version"
+                "-p:AssemblyVersion=$fileVersion"
+                "-p:FileVersion=$fileVersion"
+            )
+
+            & dotnet @publishArguments
+            if ($LASTEXITCODE -ne 0) {
+                throw "dotnet publish failed for $platform with exit code $LASTEXITCODE."
+            }
+
+            $applicationPath = Join-Path $publishDirectory 'CommandPaletteLLM.exe'
+            if (-not (Test-Path -LiteralPath $applicationPath -PathType Leaf)) {
+                throw "The unpackaged application was not created at '$applicationPath'."
+            }
+
+            [xml] $sparseManifest = Get-Content -Raw -LiteralPath $sparseManifestSource
+            $sparseManifest.Package.Identity.Version = $fileVersion
+            $sparseManifestPath = Join-Path $sparseDirectory 'AppxManifest.xml'
+            $sparseManifest.Save($sparseManifestPath)
+
+            $identityPackage = Join-Path $publishDirectory 'CommandPaletteLLM.identity.msix'
+            & $makeAppx pack /o /d $sparseDirectory /nv /p $identityPackage
+            if ($LASTEXITCODE -ne 0) {
+                throw "MakeAppx failed for $platform with exit code $LASTEXITCODE."
+            }
+
+            $identityCertificate = Join-Path $publishDirectory 'CommandPaletteLLM.identity.cer'
+            Export-Certificate -Cert $buildCertificate -FilePath $identityCertificate -Force | Out-Null
+
+            & $signTool sign /sha1 $buildCertificate.Thumbprint /s My /fd SHA256 $identityPackage
+            if ($LASTEXITCODE -ne 0) {
+                throw "SignTool failed for $platform with exit code $LASTEXITCODE."
+            }
         }
-
-        New-Item -ItemType Directory -Path $publishDirectory -Force | Out-Null
-
-        $publishArguments = @(
-            'publish'
-            $projectPath
-            '--configuration', 'Release'
-            '--runtime', $runtimeIdentifier
-            '--self-contained', 'true'
-            '--output', $publishDirectory
-            "-p:Platform=$platform"
-            '-p:WinGetPackage=true'
-            "-p:Version=$Version"
-            "-p:AssemblyVersion=$fileVersion"
-            "-p:FileVersion=$fileVersion"
-        )
-
-        & dotnet @publishArguments
-        if ($LASTEXITCODE -ne 0) {
-            throw "dotnet publish failed for $platform with exit code $LASTEXITCODE."
-        }
-
-        $applicationPath = Join-Path $publishDirectory 'CommandPaletteLLM.exe'
-        if (-not (Test-Path -LiteralPath $applicationPath -PathType Leaf)) {
-            throw "The unpackaged application was not created at '$applicationPath'."
-        }
+    }
+    finally {
+        Remove-Item -LiteralPath "Cert:\CurrentUser\My\$($buildCertificate.Thumbprint)" -Force -ErrorAction SilentlyContinue
     }
 }
 
@@ -135,14 +230,25 @@ if (-not $StageOnly) {
 
     foreach ($platform in $Platforms) {
         $sourceDirectory = Join-Path $publishRoot "win-$platform"
-        if (-not (Test-Path -LiteralPath (Join-Path $sourceDirectory 'CommandPaletteLLM.exe') -PathType Leaf)) {
+        $applicationPath = Join-Path $sourceDirectory 'CommandPaletteLLM.exe'
+        $identityPackage = Join-Path $sourceDirectory 'CommandPaletteLLM.identity.msix'
+        $identityCertificate = Join-Path $sourceDirectory 'CommandPaletteLLM.identity.cer'
+        if (-not (Test-Path -LiteralPath $applicationPath -PathType Leaf)) {
             throw "Run the staging build first; '$sourceDirectory' does not contain CommandPaletteLLM.exe."
+        }
+        if (-not (Test-Path -LiteralPath $identityPackage -PathType Leaf)) {
+            throw "Run the staging build first; '$identityPackage' does not exist."
+        }
+        if (-not (Test-Path -LiteralPath $identityCertificate -PathType Leaf)) {
+            throw "Run the staging build first; '$identityCertificate' does not exist."
         }
 
         & $innoSetup `
             "/DAppVersion=$Version" `
             "/DPlatform=$platform" `
             "/DSourceDir=$sourceDirectory" `
+            "/DIdentityPackage=$identityPackage" `
+            "/DIdentityCertificate=$identityCertificate" `
             "/DOutputDir=$installerOutput" `
             $installerScript
 

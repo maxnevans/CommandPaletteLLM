@@ -13,14 +13,14 @@ settings, or API credentials through the application.
 
 ## Information stored on your device
 
-The application creates configuration files only after settings are saved. An
-unpackaged build stores command definitions, provider settings, and imported
-command icons under `%LOCALAPPDATA%\CommandPaletteLLM`. For the MSIX build,
-Windows redirects that directory beneath the package's
-`LocalCache\Local\CommandPaletteLLM` directory. Provider API keys are encrypted
-for the current Windows user with Windows Data Protection API (DPAPI). They are
-decrypted only in the application process when authenticating to a provider you
-configured.
+The application creates configuration files only after settings are saved. The
+installed Store and community builds run with package identity, so Windows
+redirects command definitions, provider settings, and imported command icons
+beneath the package's `LocalCache\Local\CommandPaletteLLM` directory. An
+unpackaged development build uses `%LOCALAPPDATA%\CommandPaletteLLM`. Provider
+API keys are encrypted for the current Windows user with Windows Data Protection
+API (DPAPI). They are decrypted only in the application process when
+authenticating to a provider you configured.
 
 The application does not retain submitted prompt values or model responses.
 
@@ -45,8 +45,8 @@ sensitive information. The publisher does not control configured providers.
 Delete commands, providers, credentials, and imported icons from extension
 settings when they are no longer needed. Uninstalling the MSIX package may also
 remove its virtualized configuration directory. Back up that directory before
-uninstalling if you need to preserve settings. For an unpackaged build, remove
-`%LOCALAPPDATA%\CommandPaletteLLM` to delete any remaining data.
+uninstalling if you need to preserve settings. For an unpackaged development
+build, remove `%LOCALAPPDATA%\CommandPaletteLLM` to delete any remaining data.
 
 ## Children
 

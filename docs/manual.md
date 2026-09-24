@@ -26,10 +26,12 @@ winget install --id maxnevans.CommandPaletteLLM --source winget
 ```
 
 > [!CAUTION]
-> The community installer is unsigned. Windows may show **Unknown publisher**,
-> display a Microsoft Defender SmartScreen warning, or block it under Smart App
-> Control or organization policy. The Microsoft Store package is signed by
-> Microsoft and is the recommended choice when those restrictions apply.
+> The community installer is unsigned. It registers a self-signed,
+> metadata-only sparse package so Command Palette can discover the extension.
+> Setup requests administrator approval to trust its public certificate in the
+> computer's Trusted People store and removes it on uninstall. Windows may show
+> **Unknown publisher**, display a SmartScreen warning, or block the outer
+> installer under policy. The Microsoft Store package is signed by Microsoft.
 
 Use one distribution channel at a time. Export settings before switching, uninstall the existing variant, install the other variant, and import the backup.
 
