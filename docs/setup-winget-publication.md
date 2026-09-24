@@ -202,6 +202,25 @@ winget install --id maxnevans.CommandPaletteLLM --source winget
 
 WinGet launches the installer elevated and Windows displays a UAC prompt.
 
+## Configure automatic manifest updates
+
+Wait until the first `maxnevans.CommandPaletteLLM` pull request has merged into `microsoft/winget-pkgs`. WingetCreate's non-interactive `update` command needs that accepted manifest as the template for later versions.
+
+Create a classic GitHub personal access token for the publishing account with the `public_repo` scope. Store it under **GitHub repository → Settings → Secrets and variables → Actions → New repository secret** with this exact name:
+
+```text
+WINGET_PAT
+```
+
+Do not put the token in the workflow file, repository variables, logs, or command-line arguments. The workflow exposes the secret only through WingetCreate's supported `WINGET_CREATE_GITHUB_TOKEN` environment variable.
+
+For every later `vMajor.Minor.Patch` tag, the WinGet workflow now runs two jobs:
+
+1. **Build and publish unsigned installers** creates the immutable x64 and ARM64 GitHub Release assets.
+2. **Submit WinGet manifest update** downloads WingetCreate, copies the accepted manifest to the new version, updates both installer URLs and hashes, and opens a pull request in `microsoft/winget-pkgs`.
+
+Microsoft still validates and merges each automatically created pull request. If only the submission job fails, use **Re-run failed jobs** in GitHub Actions. Do not rerun the successful build job or replace the release assets; correct the problem and retry only the submission job.
+
 ## Settings when switching channels
 
 The Store and community packages use different package identities and application-data locations. Export settings before switching installation channels, uninstall the old channel, install the new one, and import the backup. Avoid keeping both variants installed because both expose the same extension CLSID.
