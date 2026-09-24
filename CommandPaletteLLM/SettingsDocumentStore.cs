@@ -23,6 +23,7 @@ internal sealed class SettingsDocumentStore
     private GlobalSettings _globalSettings;
     private List<LlmProviderSettings> _providers;
     private List<JsonRequestTemplateDefinition> _jsonRequestTemplates;
+    private List<StepTemplateDefinition> _stepTemplates;
     private List<UserCommandDefinition> _commands;
     private bool _beautifulFormatting;
 
@@ -68,6 +69,10 @@ internal sealed class SettingsDocumentStore
             _jsonRequestTemplates = NormalizeJsonRequestTemplates(
                 document.JsonRequestTemplates,
                 _providers);
+            _stepTemplates = NormalizeStepTemplates(
+                document.StepTemplates,
+                _providers,
+                _jsonRequestTemplates);
             _commands = NormalizeCommands(document.Commands, _jsonRequestTemplates);
             return;
         }
@@ -79,6 +84,7 @@ internal sealed class SettingsDocumentStore
             dataProtector,
             out _);
         _jsonRequestTemplates = [];
+        _stepTemplates = [];
         _commands = UserCommandStore.LoadCommands(legacyCommandsPath);
 
         var hasLegacySettings =
@@ -133,6 +139,14 @@ internal sealed class SettingsDocumentStore
         }
     }
 
+    internal IReadOnlyList<StepTemplateDefinition> GetStepTemplates()
+    {
+        lock (_sync)
+        {
+            return _stepTemplates.Select(template => template.Clone()).ToArray();
+        }
+    }
+
     internal void ReplaceGlobalSettings(GlobalSettings settings)
     {
         lock (_sync)
@@ -150,6 +164,10 @@ internal sealed class SettingsDocumentStore
             _jsonRequestTemplates = NormalizeJsonRequestTemplates(
                 _jsonRequestTemplates,
                 _providers);
+            _stepTemplates = NormalizeStepTemplates(
+                _stepTemplates,
+                _providers,
+                _jsonRequestTemplates);
             _commands = NormalizeCommands(_commands, _jsonRequestTemplates);
             Save();
         }
@@ -161,7 +179,23 @@ internal sealed class SettingsDocumentStore
         lock (_sync)
         {
             _jsonRequestTemplates = NormalizeJsonRequestTemplates(templates, _providers);
+            _stepTemplates = NormalizeStepTemplates(
+                _stepTemplates,
+                _providers,
+                _jsonRequestTemplates);
             _commands = NormalizeCommands(_commands, _jsonRequestTemplates);
+            Save();
+        }
+    }
+
+    internal void ReplaceStepTemplates(IEnumerable<StepTemplateDefinition> templates)
+    {
+        lock (_sync)
+        {
+            _stepTemplates = NormalizeStepTemplates(
+                templates,
+                _providers,
+                _jsonRequestTemplates);
             Save();
         }
     }
@@ -228,6 +262,7 @@ internal sealed class SettingsDocumentStore
                 _globalSettings = new GlobalSettings();
                 _providers = [new LlmProviderSettings()];
                 _jsonRequestTemplates = [];
+                _stepTemplates = [];
                 _commands = [];
                 _beautifulFormatting = false;
                 return;
@@ -286,6 +321,9 @@ internal sealed class SettingsDocumentStore
                 .Select(provider => LlmProviderSettingsStore.ToStored(provider, _dataProtector))
                 .ToList(),
             JsonRequestTemplates = _jsonRequestTemplates
+                .Select(template => template.Clone())
+                .ToList(),
+            StepTemplates = _stepTemplates
                 .Select(template => template.Clone())
                 .ToList(),
             Commands = _commands.Select(command => command.Clone()).ToList(),
@@ -349,6 +387,7 @@ internal sealed class SettingsDocumentStore
             document.Global ??= new GlobalSettings();
             document.Providers ??= [];
             document.JsonRequestTemplates ??= [];
+            document.StepTemplates ??= [];
             document.Commands ??= [];
             beautifulFormatting =
                 document.BeautifulFormatting ??
@@ -480,6 +519,41 @@ internal sealed class SettingsDocumentStore
             .ToList();
     }
 
+    private static List<StepTemplateDefinition> NormalizeStepTemplates(
+        IEnumerable<StepTemplateDefinition> templates,
+        IReadOnlyList<LlmProviderSettings> providers,
+        IReadOnlyList<JsonRequestTemplateDefinition> requestTemplates)
+    {
+        var providerIds = providers.Select(provider => provider.Id).ToHashSet(StringComparer.Ordinal);
+        var requestTemplatesById = requestTemplates.ToDictionary(template => template.Id, StringComparer.Ordinal);
+        var templateIds = new HashSet<string>(StringComparer.Ordinal);
+        var names = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        var normalized = new List<StepTemplateDefinition>();
+        foreach (var source in templates)
+        {
+            var template = source.Clone();
+            template.Name = template.Name.Trim();
+            if (!StepTemplateStore.IsValid(template) ||
+                !providerIds.Contains(template.ProviderId) ||
+                !templateIds.Add(template.Id) ||
+                !names.Add(template.Name))
+            {
+                continue;
+            }
+
+            if (!string.IsNullOrEmpty(template.RequestTemplateId) &&
+                (!requestTemplatesById.TryGetValue(template.RequestTemplateId, out var requestTemplate) ||
+                    !string.Equals(requestTemplate.ProviderId, template.ProviderId, StringComparison.Ordinal)))
+            {
+                template.RequestTemplateId = string.Empty;
+            }
+
+            normalized.Add(template);
+        }
+
+        return normalized;
+    }
+
     private void ApplyDocument(SettingsDocument document)
     {
         _globalSettings = NormalizeGlobalSettings(document.Global);
@@ -489,6 +563,10 @@ internal sealed class SettingsDocumentStore
         _jsonRequestTemplates = NormalizeJsonRequestTemplates(
             document.JsonRequestTemplates,
             _providers);
+        _stepTemplates = NormalizeStepTemplates(
+            document.StepTemplates,
+            _providers,
+            _jsonRequestTemplates);
         _commands = NormalizeCommands(document.Commands, _jsonRequestTemplates);
     }
 

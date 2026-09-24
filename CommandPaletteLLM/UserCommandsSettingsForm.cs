@@ -20,6 +20,7 @@ internal sealed partial class UserCommandsSettingsForm : FormContent
     private readonly UserCommandStore _store;
     private readonly LlmProviderSettingsStore _providerSettingsStore;
     private readonly JsonRequestTemplateStore _requestTemplateStore;
+    private readonly StepTemplateStore _stepTemplateStore;
     private readonly GlobalSettingsStore _globalSettingsStore;
     private readonly Action _commandsChanged;
     private readonly Action _globalSettingsChanged;
@@ -30,6 +31,7 @@ internal sealed partial class UserCommandsSettingsForm : FormContent
     private readonly HashSet<string> _expandedCommandIds = new(StringComparer.Ordinal);
     private readonly HashSet<string> _expandedProviderIds = new(StringComparer.Ordinal);
     private readonly HashSet<string> _expandedRequestTemplateIds = new(StringComparer.Ordinal);
+    private readonly HashSet<string> _expandedStepTemplateIds = new(StringComparer.Ordinal);
     private readonly JsonObject _draftInputs = [];
     private bool _globalSettingsExpanded;
 
@@ -45,6 +47,7 @@ internal sealed partial class UserCommandsSettingsForm : FormContent
             providerSettingsStore,
             globalSettingsStore,
             new JsonRequestTemplateStore(),
+            new StepTemplateStore(),
             commandsChanged,
             globalSettingsChanged,
             providerSettingsChanged,
@@ -66,6 +69,7 @@ internal sealed partial class UserCommandsSettingsForm : FormContent
             providerSettingsStore,
             globalSettingsStore,
             new JsonRequestTemplateStore(),
+            new StepTemplateStore(),
             commandsChanged,
             globalSettingsChanged,
             providerSettingsChanged,
@@ -88,6 +92,7 @@ internal sealed partial class UserCommandsSettingsForm : FormContent
             providerSettingsStore,
             globalSettingsStore,
             requestTemplateStore,
+            new StepTemplateStore(),
             commandsChanged,
             globalSettingsChanged,
             providerSettingsChanged,
@@ -106,11 +111,61 @@ internal sealed partial class UserCommandsSettingsForm : FormContent
         Action providerSettingsChanged,
         Action requestTemplatesChanged,
         ISettingsFileLauncher settingsFileLauncher)
+        : this(
+            store,
+            providerSettingsStore,
+            globalSettingsStore,
+            requestTemplateStore,
+            new StepTemplateStore(),
+            commandsChanged,
+            globalSettingsChanged,
+            providerSettingsChanged,
+            requestTemplatesChanged,
+            settingsFileLauncher)
+    {
+    }
+
+    public UserCommandsSettingsForm(
+        UserCommandStore store,
+        LlmProviderSettingsStore providerSettingsStore,
+        GlobalSettingsStore globalSettingsStore,
+        JsonRequestTemplateStore requestTemplateStore,
+        StepTemplateStore stepTemplateStore,
+        Action commandsChanged,
+        Action globalSettingsChanged,
+        Action providerSettingsChanged,
+        Action requestTemplatesChanged)
+        : this(
+            store,
+            providerSettingsStore,
+            globalSettingsStore,
+            requestTemplateStore,
+            stepTemplateStore,
+            commandsChanged,
+            globalSettingsChanged,
+            providerSettingsChanged,
+            requestTemplatesChanged,
+            new SettingsFileLauncher())
+    {
+    }
+
+    internal UserCommandsSettingsForm(
+        UserCommandStore store,
+        LlmProviderSettingsStore providerSettingsStore,
+        GlobalSettingsStore globalSettingsStore,
+        JsonRequestTemplateStore requestTemplateStore,
+        StepTemplateStore stepTemplateStore,
+        Action commandsChanged,
+        Action globalSettingsChanged,
+        Action providerSettingsChanged,
+        Action requestTemplatesChanged,
+        ISettingsFileLauncher settingsFileLauncher)
     {
         _store = store;
         _providerSettingsStore = providerSettingsStore;
         _globalSettingsStore = globalSettingsStore;
         _requestTemplateStore = requestTemplateStore;
+        _stepTemplateStore = stepTemplateStore;
         _commandsChanged = commandsChanged;
         _globalSettingsChanged = globalSettingsChanged;
         _providerSettingsChanged = providerSettingsChanged;
@@ -253,6 +308,22 @@ internal sealed partial class UserCommandsSettingsForm : FormContent
                     isExpanded: false);
             }
 
+            const string editStepTemplatePrefix = "edit-step-template:";
+            if (actionId?.StartsWith(editStepTemplatePrefix, StringComparison.Ordinal) == true)
+            {
+                return SetStepTemplateEditorVisibility(
+                    actionId[editStepTemplatePrefix.Length..],
+                    isExpanded: true);
+            }
+
+            const string cancelStepTemplatePrefix = "cancel-step-template:";
+            if (actionId?.StartsWith(cancelStepTemplatePrefix, StringComparison.Ordinal) == true)
+            {
+                return SetStepTemplateEditorVisibility(
+                    actionId[cancelStepTemplatePrefix.Length..],
+                    isExpanded: false);
+            }
+
             if (string.Equals(actionId, "add", StringComparison.Ordinal))
             {
                 return Add(input);
@@ -266,6 +337,11 @@ internal sealed partial class UserCommandsSettingsForm : FormContent
             if (string.Equals(actionId, "add-request-template", StringComparison.Ordinal))
             {
                 return AddRequestTemplate(input);
+            }
+
+            if (string.Equals(actionId, "add-step-template", StringComparison.Ordinal))
+            {
+                return AddStepTemplate(input);
             }
 
             const string saveProviderPrefix = "save-provider:";
@@ -296,6 +372,24 @@ internal sealed partial class UserCommandsSettingsForm : FormContent
             if (actionId?.StartsWith(deleteRequestTemplatePrefix, StringComparison.Ordinal) == true)
             {
                 return DeleteRequestTemplate(actionId[deleteRequestTemplatePrefix.Length..]);
+            }
+
+            const string saveStepTemplatePrefix = "save-step-template:";
+            if (actionId?.StartsWith(saveStepTemplatePrefix, StringComparison.Ordinal) == true)
+            {
+                return SaveStepTemplate(input, actionId[saveStepTemplatePrefix.Length..]);
+            }
+
+            const string deleteStepTemplatePrefix = "delete-step-template:";
+            if (actionId?.StartsWith(deleteStepTemplatePrefix, StringComparison.Ordinal) == true)
+            {
+                return DeleteStepTemplate(actionId[deleteStepTemplatePrefix.Length..]);
+            }
+
+            const string applyStepTemplateProviderPrefix = "apply-step-template-provider:";
+            if (actionId?.StartsWith(applyStepTemplateProviderPrefix, StringComparison.Ordinal) == true)
+            {
+                return ApplyStepTemplateProvider(input, actionId[applyStepTemplateProviderPrefix.Length..]);
             }
 
             if (string.Equals(actionId, "save-provider", StringComparison.Ordinal))
@@ -445,10 +539,12 @@ internal sealed partial class UserCommandsSettingsForm : FormContent
         _expandedCommandIds.Clear();
         _expandedProviderIds.Clear();
         _expandedRequestTemplateIds.Clear();
+        _expandedStepTemplateIds.Clear();
         _globalSettingsExpanded = false;
         _store.ReloadFromDocument();
         _providerSettingsStore.ReloadFromDocument();
         _requestTemplateStore.ReloadFromDocument();
+        _stepTemplateStore.ReloadFromDocument();
         _globalSettingsStore.ReloadFromDocument();
         _providerSettingsChanged();
         _requestTemplatesChanged();
@@ -508,6 +604,168 @@ internal sealed partial class UserCommandsSettingsForm : FormContent
         return ValidateAndSaveRequestTemplates(templates);
     }
 
+    private CommandResult AddStepTemplate(JsonObject input)
+    {
+        var templates = _stepTemplateStore.GetTemplates()
+            .Select(template => template.Clone())
+            .ToList();
+        templates.Add(new StepTemplateDefinition
+        {
+            Id = Guid.NewGuid().ToString("N"),
+            Name = ReadText(input, "newStepTemplateName"),
+            Prompt = "{}",
+            ProviderId = _providerSettingsStore.Get().Id,
+        });
+
+        _draftInputs.Remove("newStepTemplateName");
+        return ValidateAndSaveStepTemplates(templates);
+    }
+
+    private CommandResult SaveStepTemplate(JsonObject input, string templateId)
+    {
+        var templates = _stepTemplateStore.GetTemplates()
+            .Select(template => template.Clone())
+            .ToList();
+        var template = templates.FirstOrDefault(item =>
+            string.Equals(item.Id, templateId, StringComparison.Ordinal));
+        if (template is null)
+        {
+            return ShowError("The step template no longer exists.");
+        }
+
+        var key = $"stepTemplate_{template.Id}_";
+        template.Name = ReadText(input, key + "name", template.Name);
+        template.Prompt = ReadText(input, key + "prompt", template.Prompt);
+        template.ProviderId = ReadText(input, key + "provider", template.ProviderId);
+        template.RequestTemplateId = ReadText(input, key + "requestTemplate", template.RequestTemplateId);
+        template.CustomRequestArguments = ReadText(input, key + "arguments", template.CustomRequestArguments);
+        var requestTemplate = _requestTemplateStore.Get(template.RequestTemplateId);
+        if (requestTemplate is null ||
+            !string.Equals(requestTemplate.ProviderId, template.ProviderId, StringComparison.Ordinal))
+        {
+            template.RequestTemplateId = string.Empty;
+        }
+
+        return ValidateAndSaveStepTemplates(templates, template.Id);
+    }
+
+    private CommandResult DeleteStepTemplate(string templateId)
+    {
+        var existingTemplates = _stepTemplateStore.GetTemplates();
+        var templates = existingTemplates
+            .Where(template => !string.Equals(template.Id, templateId, StringComparison.Ordinal))
+            .ToArray();
+        if (templates.Length == existingTemplates.Count)
+        {
+            return ShowError("The step template no longer exists.");
+        }
+
+        _stepTemplateStore.ReplaceAll(templates);
+        _expandedStepTemplateIds.Remove(templateId);
+        RemoveDraftInputsForStepTemplate(templateId);
+        foreach (var key in _draftInputs.Select(property => property.Key)
+            .Where(key => key.StartsWith("newStepSource_", StringComparison.Ordinal) &&
+                string.Equals(_draftInputs[key]?.ToString(), $"template:{templateId}", StringComparison.Ordinal))
+            .ToArray())
+        {
+            _draftInputs[key] = string.Empty;
+        }
+
+        Refresh();
+        return CommandResult.KeepOpen();
+    }
+
+    private CommandResult ApplyStepTemplateProvider(JsonObject input, string templateId)
+    {
+        var template = _stepTemplateStore.Get(templateId);
+        if (template is null)
+        {
+            return ShowError("The step template no longer exists.");
+        }
+
+        var key = $"stepTemplate_{template.Id}_";
+        var providerId = ReadText(input, key + "provider", template.ProviderId);
+        if (_providerSettingsStore.Get(providerId) is null)
+        {
+            return ShowError($"Step template '{template.Name}' must use an existing LLM provider.");
+        }
+
+        var requestTemplateId = ReadText(input, key + "requestTemplate", template.RequestTemplateId);
+        var requestTemplate = _requestTemplateStore.Get(requestTemplateId);
+        if (requestTemplate is null ||
+            !string.Equals(requestTemplate.ProviderId, providerId, StringComparison.Ordinal))
+        {
+            _draftInputs[key + "requestTemplate"] = string.Empty;
+        }
+
+        _expandedStepTemplateIds.Add(templateId);
+        Refresh();
+        return CommandResult.KeepOpen();
+    }
+
+    private CommandResult ValidateAndSaveStepTemplates(
+        IReadOnlyList<StepTemplateDefinition> templates,
+        string? savedTemplateId = null)
+    {
+        var names = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        foreach (var template in templates)
+        {
+            template.Name = template.Name.Trim();
+            if (string.IsNullOrWhiteSpace(template.Name))
+            {
+                return ShowError("Every step template must have a name.");
+            }
+
+            if (!names.Add(template.Name))
+            {
+                return ShowError($"Step template names must be unique. '{template.Name}' is used more than once.");
+            }
+
+            if (_providerSettingsStore.Get(template.ProviderId) is null)
+            {
+                return ShowError($"Step template '{template.Name}' must use an existing LLM provider.");
+            }
+
+            if (string.IsNullOrWhiteSpace(template.Prompt))
+            {
+                return ShowError($"Step template '{template.Name}' must have a prompt.");
+            }
+
+            if (!OutputFormatter.TryFormat(template.Prompt, string.Empty, out _, out var promptError))
+            {
+                return ShowError($"Step template '{template.Name}' has an invalid prompt: {promptError}");
+            }
+
+            var requestTemplate = _requestTemplateStore.Get(template.RequestTemplateId);
+            if (!string.IsNullOrEmpty(template.RequestTemplateId) &&
+                (requestTemplate is null ||
+                    !string.Equals(requestTemplate.ProviderId, template.ProviderId, StringComparison.Ordinal)))
+            {
+                return ShowError($"Step template '{template.Name}' must use a JSON request template assigned to the same provider.");
+            }
+
+            if (!CustomRequestArguments.TryParse(
+                template.CustomRequestArguments,
+                out var arguments,
+                out var argumentsError))
+            {
+                return ShowError($"Step template '{template.Name}': {argumentsError}");
+            }
+
+            arguments?.Dispose();
+        }
+
+        _stepTemplateStore.ReplaceAll(templates);
+        if (savedTemplateId is not null)
+        {
+            _expandedStepTemplateIds.Remove(savedTemplateId);
+            RemoveDraftInputsForStepTemplate(savedTemplateId);
+        }
+
+        Refresh();
+        return CommandResult.KeepOpen();
+    }
+
     private CommandResult SaveRequestTemplate(JsonObject input, string templateId)
     {
         var templates = _requestTemplateStore.GetTemplates()
@@ -548,7 +806,15 @@ internal sealed partial class UserCommandsSettingsForm : FormContent
             step.RequestTemplateId = string.Empty;
         }
 
-        return ValidateAndSaveRequestTemplates(templates, commands, template.Id);
+        var stepTemplates = _stepTemplateStore.GetTemplates().Select(item => item.Clone()).ToList();
+        foreach (var stepTemplate in stepTemplates.Where(item =>
+            string.Equals(item.RequestTemplateId, templateId, StringComparison.Ordinal) &&
+                !string.Equals(item.ProviderId, template.ProviderId, StringComparison.Ordinal)))
+        {
+            stepTemplate.RequestTemplateId = string.Empty;
+        }
+
+        return ValidateAndSaveRequestTemplates(templates, commands, stepTemplates, template.Id);
     }
 
     private CommandResult DeleteRequestTemplate(string templateId)
@@ -575,7 +841,15 @@ internal sealed partial class UserCommandsSettingsForm : FormContent
             step.RequestTemplateId = string.Empty;
         }
 
+        var stepTemplates = _stepTemplateStore.GetTemplates().Select(item => item.Clone()).ToList();
+        foreach (var stepTemplate in stepTemplates.Where(item =>
+            string.Equals(item.RequestTemplateId, templateId, StringComparison.Ordinal)))
+        {
+            stepTemplate.RequestTemplateId = string.Empty;
+        }
+
         _requestTemplateStore.ReplaceAll(templates);
+        _stepTemplateStore.ReplaceAll(stepTemplates);
         _store.ReplaceAll(commands);
         _expandedRequestTemplateIds.Remove(templateId);
         RemoveDraftInputsForRequestTemplate(templateId);
@@ -588,6 +862,7 @@ internal sealed partial class UserCommandsSettingsForm : FormContent
     private CommandResult ValidateAndSaveRequestTemplates(
         List<JsonRequestTemplateDefinition> templates,
         List<UserCommandDefinition>? commands = null,
+        List<StepTemplateDefinition>? stepTemplates = null,
         string? savedTemplateId = null)
     {
         var validationError = ValidateRequestTemplates(
@@ -599,6 +874,10 @@ internal sealed partial class UserCommandsSettingsForm : FormContent
         }
 
         _requestTemplateStore.ReplaceAll(templates);
+        if (stepTemplates is not null)
+        {
+            _stepTemplateStore.ReplaceAll(stepTemplates);
+        }
         if (commands is not null)
         {
             _store.ReplaceAll(commands);
@@ -696,6 +975,12 @@ internal sealed partial class UserCommandsSettingsForm : FormContent
             command.Steps.Any(step => string.Equals(step.ProviderId, providerId, StringComparison.Ordinal))))
         {
             return ShowError("Assign commands to another provider before deleting this provider.");
+        }
+
+        if (_stepTemplateStore.GetTemplates().Any(template =>
+            string.Equals(template.ProviderId, providerId, StringComparison.Ordinal)))
+        {
+            return ShowError("Assign step templates to another provider before deleting this provider.");
         }
 
         _providerSettingsStore.ReplaceAll(providers.Where(provider =>
@@ -970,10 +1255,12 @@ internal sealed partial class UserCommandsSettingsForm : FormContent
             _globalSettingsStore.GetFileStatus(),
             _providerSettingsStore.GetProviders(),
             _requestTemplateStore.GetTemplates(),
+            _stepTemplateStore.GetTemplates(),
             _store.GetCommands().Select(GetPipelineDraft).ToArray(),
             _globalSettingsExpanded,
             _expandedProviderIds,
             _expandedRequestTemplateIds,
+            _expandedStepTemplateIds,
             _expandedCommandIds,
             _draftInputs,
             errorMessage).ToJsonString();
@@ -994,10 +1281,12 @@ internal sealed partial class UserCommandsSettingsForm : FormContent
         SettingsFileStatus settingsFileStatus,
         IReadOnlyList<LlmProviderSettings> providers,
         IReadOnlyList<JsonRequestTemplateDefinition> requestTemplates,
+        IReadOnlyList<StepTemplateDefinition> stepTemplates,
         UserCommandDefinition[] commands,
         bool expandedGlobalSettings,
         HashSet<string> expandedProviderIds,
         HashSet<string> expandedRequestTemplateIds,
+        HashSet<string> expandedStepTemplateIds,
         HashSet<string> expandedCommandIds,
         JsonObject draftInputs,
         string? errorMessage)
@@ -1120,6 +1409,64 @@ internal sealed partial class UserCommandsSettingsForm : FormContent
         body.Add(new JsonObject
         {
             ["type"] = "TextBlock",
+            ["text"] = "Step templates",
+            ["size"] = "Large",
+            ["weight"] = "Bolder",
+        });
+        body.Add(new JsonObject
+        {
+            ["type"] = "TextBlock",
+            ["text"] = "Reuse user-step settings when building pipelines. Creating a step copies the template; later template changes do not affect it.",
+            ["wrap"] = true,
+        });
+
+        if (stepTemplates.Count == 0)
+        {
+            body.Add(new JsonObject
+            {
+                ["type"] = "TextBlock",
+                ["text"] = "No step templates have been created yet.",
+                ["isSubtle"] = true,
+                ["wrap"] = true,
+            });
+        }
+
+        foreach (var stepTemplate in stepTemplates)
+        {
+            body.Add(BuildStepTemplateEditor(
+                stepTemplate,
+                providers,
+                requestTemplates,
+                expandedStepTemplateIds.Contains(stepTemplate.Id),
+                draftInputs));
+        }
+
+        body.Add(BuildSeparator());
+        body.Add(new JsonObject
+        {
+            ["type"] = "TextBlock",
+            ["text"] = "Add a step template",
+            ["weight"] = "Bolder",
+        });
+        body.Add(BuildTextInput(
+            "newStepTemplateName",
+            "Template and step name",
+            string.Empty,
+            "For example: Translate",
+            isRequired: false));
+        body.Add(new JsonObject
+        {
+            ["type"] = "ActionSet",
+            ["actions"] = new JsonArray
+            {
+                BuildSubmitAction("Add step template", "add-step-template"),
+            },
+        });
+
+        body.Add(BuildSeparator(isSectionSeparator: true));
+        body.Add(new JsonObject
+        {
+            ["type"] = "TextBlock",
             ["text"] = "Commands",
             ["size"] = "Large",
             ["weight"] = "Bolder",
@@ -1148,6 +1495,7 @@ internal sealed partial class UserCommandsSettingsForm : FormContent
                 command,
                 providers,
                 requestTemplates,
+                stepTemplates,
                 expandedCommandIds.Contains(command.Id),
                 draftInputs));
         }
@@ -1776,10 +2124,178 @@ internal sealed partial class UserCommandsSettingsForm : FormContent
         "Trimming",
         "IL2026",
         Justification = "The card builder adds only primitive values and explicit JsonNode instances.")]
+    private static JsonObject BuildStepTemplateEditor(
+        StepTemplateDefinition stepTemplate,
+        IReadOnlyList<LlmProviderSettings> providers,
+        IReadOnlyList<JsonRequestTemplateDefinition> requestTemplates,
+        bool isExpanded,
+        JsonObject draftInputs)
+    {
+        var key = $"stepTemplate_{stepTemplate.Id}_";
+        var providerId = ReadText(draftInputs, key + "provider", stepTemplate.ProviderId);
+        var matchingRequestTemplates = requestTemplates
+            .Where(template => string.Equals(template.ProviderId, providerId, StringComparison.Ordinal))
+            .ToArray();
+        var requestTemplateId = ReadText(
+            draftInputs,
+            key + "requestTemplate",
+            stepTemplate.RequestTemplateId);
+        if (!matchingRequestTemplates.Any(template =>
+            string.Equals(template.Id, requestTemplateId, StringComparison.Ordinal)))
+        {
+            requestTemplateId = string.Empty;
+        }
+
+        return new JsonObject
+        {
+            ["type"] = "Container",
+            ["style"] = "emphasis",
+            ["spacing"] = "Medium",
+            ["items"] = new JsonArray
+            {
+                new JsonObject
+                {
+                    ["type"] = "Container",
+                    ["id"] = $"step_template_display_{stepTemplate.Id}",
+                    ["isVisible"] = !isExpanded,
+                    ["items"] = new JsonArray
+                    {
+                        new JsonObject
+                        {
+                            ["type"] = "ColumnSet",
+                            ["columns"] = new JsonArray
+                            {
+                                new JsonObject
+                                {
+                                    ["type"] = "Column",
+                                    ["width"] = "stretch",
+                                    ["items"] = new JsonArray
+                                    {
+                                        new JsonObject
+                                        {
+                                            ["type"] = "TextBlock",
+                                            ["text"] = stepTemplate.Name,
+                                            ["weight"] = "Bolder",
+                                            ["wrap"] = true,
+                                        },
+                                        new JsonObject
+                                        {
+                                            ["type"] = "TextBlock",
+                                            ["text"] = $"{GetProviderName(stepTemplate.ProviderId, providers)} · {GetRequestTemplateName(stepTemplate.RequestTemplateId, requestTemplates)}",
+                                            ["isSubtle"] = true,
+                                            ["spacing"] = "Small",
+                                            ["wrap"] = true,
+                                        },
+                                        new JsonObject
+                                        {
+                                            ["type"] = "TextBlock",
+                                            ["text"] = stepTemplate.Prompt,
+                                            ["fontType"] = "Monospace",
+                                            ["isSubtle"] = true,
+                                            ["spacing"] = "Small",
+                                            ["wrap"] = true,
+                                        },
+                                    },
+                                },
+                                new JsonObject
+                                {
+                                    ["type"] = "Column",
+                                    ["width"] = "auto",
+                                    ["verticalContentAlignment"] = "Center",
+                                    ["items"] = new JsonArray
+                                    {
+                                        new JsonObject
+                                        {
+                                            ["type"] = "ActionSet",
+                                            ["actions"] = new JsonArray
+                                            {
+                                                BuildSubmitAction("✏", $"edit-step-template:{stepTemplate.Id}", "Edit step template"),
+                                                BuildSubmitAction(
+                                                    "✕",
+                                                    $"delete-step-template:{stepTemplate.Id}",
+                                                    "Delete step template",
+                                                    associatedInputs: "none",
+                                                    style: "destructive"),
+                                            },
+                                        },
+                                    },
+                                },
+                            },
+                        },
+                    },
+                },
+                new JsonObject
+                {
+                    ["type"] = "Container",
+                    ["id"] = $"step_template_editor_{stepTemplate.Id}",
+                    ["isVisible"] = isExpanded,
+                    ["items"] = new JsonArray
+                    {
+                        BuildTextInput(
+                            key + "name",
+                            "Template and step name",
+                            ReadText(draftInputs, key + "name", stepTemplate.Name),
+                            string.Empty),
+                        BuildTextInput(
+                            key + "prompt",
+                            "Prompt format",
+                            ReadText(draftInputs, key + "prompt", stepTemplate.Prompt),
+                            "Use {} for input, {{ for {, and }} for }.",
+                            isMultiline: true),
+                        BuildChoiceInput(
+                            key + "provider",
+                            "LLM provider",
+                            providerId,
+                            providers.Select(provider => (provider.Name, provider.Id))),
+                        new JsonObject
+                        {
+                            ["type"] = "ActionSet",
+                            ["actions"] = new JsonArray(BuildSubmitAction(
+                                "Apply provider",
+                                $"apply-step-template-provider:{stepTemplate.Id}")),
+                        },
+                        BuildChoiceInput(
+                            key + "requestTemplate",
+                            "JSON request template",
+                            requestTemplateId,
+                            new[] { ("None", string.Empty) }.Concat(
+                                matchingRequestTemplates.Select(template => (template.Name, template.Id)))),
+                        BuildTextInput(
+                            key + "arguments",
+                            "Custom request arguments (optional)",
+                            ReadText(draftInputs, key + "arguments", stepTemplate.CustomRequestArguments),
+                            "{\"temperature\":0.7}",
+                            isRequired: false,
+                            isMultiline: true),
+                        new JsonObject
+                        {
+                            ["type"] = "ActionSet",
+                            ["horizontalAlignment"] = "Right",
+                            ["actions"] = new JsonArray
+                            {
+                                BuildSubmitAction("✓", $"save-step-template:{stepTemplate.Id}", "Save step template"),
+                                BuildSubmitAction("✕", $"cancel-step-template:{stepTemplate.Id}", "Cancel editing"),
+                            },
+                        },
+                    },
+                },
+            },
+        };
+    }
+
+    [UnconditionalSuppressMessage(
+        "AOT",
+        "IL3050",
+        Justification = "The card builder adds only primitive values and explicit JsonNode instances.")]
+    [UnconditionalSuppressMessage(
+        "Trimming",
+        "IL2026",
+        Justification = "The card builder adds only primitive values and explicit JsonNode instances.")]
     private JsonObject BuildCommandEditor(
         UserCommandDefinition command,
         IReadOnlyList<LlmProviderSettings> providers,
         IReadOnlyList<JsonRequestTemplateDefinition> requestTemplates,
+        IReadOnlyList<StepTemplateDefinition> stepTemplates,
         bool isExpanded,
         JsonObject draftInputs)
     {
@@ -2005,7 +2521,7 @@ internal sealed partial class UserCommandsSettingsForm : FormContent
                 },
             },
         };
-        ConfigureCommandModeCard(card, command, providers, requestTemplates, draftInputs);
+        ConfigureCommandModeCard(card, command, providers, requestTemplates, stepTemplates, draftInputs);
         return card;
     }
 
@@ -2538,6 +3054,27 @@ internal sealed partial class UserCommandsSettingsForm : FormContent
         return CommandResult.KeepOpen();
     }
 
+    private CommandResult SetStepTemplateEditorVisibility(string templateId, bool isExpanded)
+    {
+        if (_stepTemplateStore.Get(templateId) is null)
+        {
+            return ShowError("The step template no longer exists.");
+        }
+
+        if (isExpanded)
+        {
+            _expandedStepTemplateIds.Add(templateId);
+        }
+        else
+        {
+            _expandedStepTemplateIds.Remove(templateId);
+            RemoveDraftInputsForStepTemplate(templateId);
+        }
+
+        Refresh();
+        return CommandResult.KeepOpen();
+    }
+
     private void CaptureDraftInputs(JsonObject input)
     {
         foreach (var property in input)
@@ -2560,7 +3097,7 @@ internal sealed partial class UserCommandsSettingsForm : FormContent
         }
 
         RemoveDraftInput($"mode_{commandId}");
-        RemoveDraftInput($"newStepType_{commandId}");
+        RemoveDraftInput($"newStepSource_{commandId}");
         RemoveDraftInput($"name_{commandId}");
         RemoveDraftInput($"format_{commandId}");
         RemoveDraftInput($"requestArguments_{commandId}");
@@ -2586,6 +3123,16 @@ internal sealed partial class UserCommandsSettingsForm : FormContent
         RemoveDraftInput($"requestTemplateName_{templateId}");
         RemoveDraftInput($"requestTemplateProvider_{templateId}");
         RemoveDraftInput($"requestTemplateArguments_{templateId}");
+    }
+
+    private void RemoveDraftInputsForStepTemplate(string templateId)
+    {
+        var prefix = $"stepTemplate_{templateId}_";
+        foreach (var key in _draftInputs.Select(property => property.Key)
+            .Where(key => key.StartsWith(prefix, StringComparison.Ordinal)).ToArray())
+        {
+            RemoveDraftInput(key);
+        }
     }
 
     private void RemoveDraftInput(string key) => _draftInputs.Remove(key);

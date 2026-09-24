@@ -53,16 +53,32 @@ internal sealed partial class UserCommandsSettingsForm
         }
         else if (operation is "add" or "add-system")
         {
-            var selectedKind = operation == "add-system" || string.Equals(
-                ReadText(_draftInputs, $"newStepType_{command.Id}", nameof(CommandStepKind.User)),
-                nameof(CommandStepKind.AdvancedOutput),
-                StringComparison.Ordinal)
-                    ? CommandStepKind.AdvancedOutput
-                    : CommandStepKind.User;
-            var step = NewStep(command, selectedKind);
+            var source = operation == "add-system"
+                ? nameof(CommandStepKind.AdvancedOutput)
+                : ReadText(_draftInputs, $"newStepSource_{command.Id}");
+            CommandStepDefinition step;
+            if (string.Equals(source, nameof(CommandStepKind.AdvancedOutput), StringComparison.Ordinal))
+            {
+                step = NewStep(command, CommandStepKind.AdvancedOutput);
+            }
+            else if (source.StartsWith("template:", StringComparison.Ordinal))
+            {
+                var template = _stepTemplateStore.Get(source["template:".Length..]);
+                if (template is null)
+                {
+                    return ShowError("The selected step template no longer exists.");
+                }
+
+                step = template.CreateStep();
+            }
+            else
+            {
+                step = NewStep(command, CommandStepKind.User);
+            }
+
             command.Steps.Add(step);
             _expandedStepIds.Add(StepCardId(command.Id, step.Id));
-            _draftInputs[$"newStepType_{command.Id}"] = nameof(CommandStepKind.User);
+            _draftInputs[$"newStepSource_{command.Id}"] = string.Empty;
         }
         else if (parts.Length == 4)
         {
@@ -184,6 +200,7 @@ internal sealed partial class UserCommandsSettingsForm
         UserCommandDefinition command,
         IReadOnlyList<LlmProviderSettings> providers,
         IReadOnlyList<JsonRequestTemplateDefinition> templates,
+        IReadOnlyList<StepTemplateDefinition> stepTemplates,
         JsonObject drafts)
     {
         var editor = card["items"]![1]!["items"]!.AsArray();
@@ -199,7 +216,7 @@ internal sealed partial class UserCommandsSettingsForm
                 editor.RemoveAt(index);
             }
 
-            editor.Insert(start, BuildPipelineEditor(command, providers, templates, drafts));
+            editor.Insert(start, BuildPipelineEditor(command, providers, templates, stepTemplates, drafts));
             editor.Insert(start + 1, BuildToggleInput($"advancedOutput_{command.Id}", "Enable advanced output format",
                 ReadBoolean(drafts, $"advancedOutput_{command.Id}", command.EnableAdvancedOutput)));
             editor.Insert(start + 2, BuildSeparator());
@@ -224,6 +241,7 @@ internal sealed partial class UserCommandsSettingsForm
         UserCommandDefinition command,
         IReadOnlyList<LlmProviderSettings> providers,
         IReadOnlyList<JsonRequestTemplateDefinition> templates,
+        IReadOnlyList<StepTemplateDefinition> stepTemplates,
         JsonObject drafts)
     {
         var items = new JsonArray(new JsonObject
@@ -377,7 +395,7 @@ internal sealed partial class UserCommandsSettingsForm
         }
 
         items.Add(BuildSeparator());
-        var newStepTypeId = $"newStepType_{command.Id}";
+        var newStepSourceId = $"newStepSource_{command.Id}";
         items.Add(new JsonObject
         {
             ["type"] = "ColumnSet",
@@ -388,13 +406,15 @@ internal sealed partial class UserCommandsSettingsForm
                     ["type"] = "Column",
                     ["width"] = "stretch",
                     ["items"] = new JsonArray(BuildChoiceInput(
-                        newStepTypeId,
-                        "Step type",
-                        ReadText(drafts, newStepTypeId, nameof(CommandStepKind.User)),
-                        [
-                            ("User step", nameof(CommandStepKind.User)),
+                        newStepSourceId,
+                        "Step source",
+                        ReadText(drafts, newStepSourceId),
+                        new[]
+                        {
+                            ("None (new user step)", string.Empty),
                             ("Advanced output format (system step)", nameof(CommandStepKind.AdvancedOutput)),
-                        ])),
+                        }.Concat(stepTemplates.Select(template =>
+                            ($"Template: {template.Name}", $"template:{template.Id}"))))),
                 },
                 new JsonObject
                 {

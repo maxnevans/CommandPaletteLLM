@@ -13,6 +13,8 @@ internal sealed class SettingsDocument
 
     public List<JsonRequestTemplateDefinition> JsonRequestTemplates { get; set; } = [];
 
+    public List<StepTemplateDefinition> StepTemplates { get; set; } = [];
+
     public List<UserCommandDefinition> Commands { get; set; } = [];
 }
 

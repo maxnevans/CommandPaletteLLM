@@ -12,6 +12,7 @@ public partial class CommandPaletteLLMCommandsProvider : CommandProvider
     private readonly UserCommandStore _store;
     private readonly LlmProviderSettingsStore _providerSettingsStore;
     private readonly JsonRequestTemplateStore _requestTemplateStore;
+    private readonly StepTemplateStore _stepTemplateStore;
     private readonly GlobalSettingsStore _globalSettingsStore;
     private readonly ILlmClient? _llmClientOverride;
     private readonly ILlmEndpointMonitor? _endpointMonitorOverride;
@@ -32,7 +33,8 @@ public partial class CommandPaletteLLMCommandsProvider : CommandProvider
             new UserCommandStore(settingsDocumentStore),
             new LlmProviderSettingsStore(settingsDocumentStore),
             new GlobalSettingsStore(settingsDocumentStore),
-            new JsonRequestTemplateStore(settingsDocumentStore))
+            new JsonRequestTemplateStore(settingsDocumentStore),
+            new StepTemplateStore(settingsDocumentStore))
     {
     }
 
@@ -42,6 +44,7 @@ public partial class CommandPaletteLLMCommandsProvider : CommandProvider
             new LlmProviderSettingsStore(filePath: null),
             new GlobalSettingsStore(filePath: null),
             new JsonRequestTemplateStore(),
+            new StepTemplateStore(),
             endpointMonitor: new AssumedAvailableEndpointMonitor())
     {
     }
@@ -56,6 +59,7 @@ public partial class CommandPaletteLLMCommandsProvider : CommandProvider
             providerSettingsStore,
             new GlobalSettingsStore(filePath: null),
             new JsonRequestTemplateStore(),
+            new StepTemplateStore(),
             llmClient,
             endpointMonitor)
     {
@@ -72,6 +76,7 @@ public partial class CommandPaletteLLMCommandsProvider : CommandProvider
             providerSettingsStore,
             globalSettingsStore,
             new JsonRequestTemplateStore(),
+            new StepTemplateStore(),
             llmClient,
             endpointMonitor)
     {
@@ -84,11 +89,31 @@ public partial class CommandPaletteLLMCommandsProvider : CommandProvider
         JsonRequestTemplateStore requestTemplateStore,
         ILlmClient? llmClient = null,
         ILlmEndpointMonitor? endpointMonitor = null)
+        : this(
+            store,
+            providerSettingsStore,
+            globalSettingsStore,
+            requestTemplateStore,
+            new StepTemplateStore(),
+            llmClient,
+            endpointMonitor)
+    {
+    }
+
+    internal CommandPaletteLLMCommandsProvider(
+        UserCommandStore store,
+        LlmProviderSettingsStore providerSettingsStore,
+        GlobalSettingsStore globalSettingsStore,
+        JsonRequestTemplateStore requestTemplateStore,
+        StepTemplateStore stepTemplateStore,
+        ILlmClient? llmClient = null,
+        ILlmEndpointMonitor? endpointMonitor = null)
     {
         _store = store;
         _providerSettingsStore = providerSettingsStore;
         _globalSettingsStore = globalSettingsStore;
         _requestTemplateStore = requestTemplateStore;
+        _stepTemplateStore = stepTemplateStore;
         _llmClientOverride = llmClient;
         _endpointMonitorOverride = endpointMonitor ?? (llmClient is null
             ? null
@@ -101,6 +126,7 @@ public partial class CommandPaletteLLMCommandsProvider : CommandProvider
             _providerSettingsStore,
             _globalSettingsStore,
             _requestTemplateStore,
+            _stepTemplateStore,
             ReloadCommands,
             ReloadCommands,
             ProviderSettingsChanged,

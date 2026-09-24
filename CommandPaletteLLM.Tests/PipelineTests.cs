@@ -429,15 +429,15 @@ public sealed class PipelineTests
         Submit(form, "pipeline:other:expand:one");
         Submit(form, "pipeline:pipeline:add", new JsonObject
         {
-            ["newStepType_pipeline"] = "AdvancedOutput",
+            ["newStepSource_pipeline"] = "AdvancedOutput",
             ["name_pipeline"] = "Unsaved command",
             ["step_pipeline_one_name"] = "Unsaved step",
             ["step_pipeline_one_prompt"] = "Draft input {}",
             ["step_other_one_prompt"] = "Other draft {}",
             ["advancedOutputSystemPrompt"] = "Unsaved shared instructions",
         });
-        Submit(form, "pipeline:pipeline:add", new JsonObject { ["newStepType_pipeline"] = "AdvancedOutput" });
-        Submit(form, "pipeline:other:add", new JsonObject { ["newStepType_other"] = "AdvancedOutput" });
+        Submit(form, "pipeline:pipeline:add", new JsonObject { ["newStepSource_pipeline"] = "AdvancedOutput" });
+        Submit(form, "pipeline:other:add", new JsonObject { ["newStepSource_other"] = "AdvancedOutput" });
 
         var root = JsonNode.Parse(form.TemplateJson)!;
         foreach (var id in new[] { "editor_pipeline", "editor_other", "provider_editor_default", "global_editor",
@@ -522,19 +522,19 @@ public sealed class PipelineTests
     }
 
     [Fact]
-    public void Settings_AddStepPickerListsUserAndSystemStepsAndResetsAfterAdding()
+    public void Settings_AddStepSourceListsNoneAndSystemAndResetsAfterAdding()
     {
         var (_, form) = Form(Pipeline());
         Submit(form, "edit:pipeline");
         var root = JsonNode.Parse(form.TemplateJson)!;
-        var picker = FindElement(root, "newStepType_pipeline");
+        var picker = FindElement(root, "newStepSource_pipeline");
         var choices = picker["choices"]!.AsArray();
         Assert.Collection(
             choices,
             choice =>
             {
-                Assert.Equal("User step", choice!["title"]!.ToString());
-                Assert.Equal("User", choice["value"]!.ToString());
+                Assert.Equal("None (new user step)", choice!["title"]!.ToString());
+                Assert.Equal(string.Empty, choice["value"]!.ToString());
             },
             choice =>
             {
@@ -544,13 +544,257 @@ public sealed class PipelineTests
         Assert.Single(Elements(root), node => node["title"]?.ToString() == "Add step");
         Assert.DoesNotContain(Elements(root), node => node["title"]?.ToString() is "Add prompt step" or "Add advanced output format");
 
-        Submit(form, "pipeline:pipeline:add", new JsonObject { ["newStepType_pipeline"] = "AdvancedOutput" });
+        Submit(form, "pipeline:pipeline:add", new JsonObject { ["newStepSource_pipeline"] = "AdvancedOutput" });
         root = JsonNode.Parse(form.TemplateJson)!;
-        Assert.Equal("User", FindElement(root, "newStepType_pipeline")["value"]!.ToString());
+        Assert.Equal(string.Empty, FindElement(root, "newStepSource_pipeline")["value"]!.ToString());
         Assert.Contains(Elements(FindElement(root, "pipeline_steps_pipeline")), node =>
             node["text"]?.ToString().Contains(
                 "Advanced output format · System step · Input: one",
                 StringComparison.Ordinal) == true);
+    }
+
+    [Fact]
+    public void Settings_CreatesIndependentStepFromTemplateWithFreshId()
+    {
+        var command = Pipeline();
+        var store = new UserCommandStore(filePath: null);
+        store.ReplaceAll([command]);
+        var providers = new LlmProviderSettingsStore(filePath: null);
+        var requestTemplates = new JsonRequestTemplateStore();
+        requestTemplates.ReplaceAll([new JsonRequestTemplateDefinition
+        {
+            Id = "request", Name = "Creative", ProviderId = "default", RequestArguments = "{}",
+        }]);
+        var stepTemplates = new StepTemplateStore();
+        stepTemplates.ReplaceAll([new StepTemplateDefinition
+        {
+            Id = "translate-template",
+            Name = "Translate",
+            Prompt = "Translate {}",
+            ProviderId = "default",
+            RequestTemplateId = "request",
+            CustomRequestArguments = "{\"temperature\":0.2}",
+        }]);
+        var form = new UserCommandsSettingsForm(
+            store,
+            providers,
+            new GlobalSettingsStore(filePath: null),
+            requestTemplates,
+            stepTemplates,
+            () => { },
+            () => { },
+            () => { },
+            () => { });
+
+        Submit(form, "edit:pipeline");
+        var source = FindElement(JsonNode.Parse(form.TemplateJson)!, "newStepSource_pipeline");
+        Assert.Contains(source["choices"]!.AsArray(), choice =>
+            choice!["title"]!.ToString() == "Template: Translate" &&
+            choice["value"]!.ToString() == "template:translate-template");
+        Submit(form, "pipeline:pipeline:add", new JsonObject
+        {
+            ["newStepSource_pipeline"] = "template:translate-template",
+        });
+        Submit(form, "save:pipeline");
+
+        var created = Assert.Single(Assert.Single(store.GetCommands()).Steps.Skip(1));
+        Assert.NotEqual("translate-template", created.Id);
+        Assert.Equal("Translate", created.Name);
+        Assert.Equal("Translate {}", created.Prompt);
+        Assert.Equal("default", created.ProviderId);
+        Assert.Equal("request", created.RequestTemplateId);
+        Assert.Equal("{\"temperature\":0.2}", created.CustomRequestArguments);
+
+        Submit(form, "save-step-template:translate-template", new JsonObject
+        {
+            ["stepTemplate_translate-template_name"] = "Changed",
+            ["stepTemplate_translate-template_prompt"] = "Changed {}",
+        });
+        created = Assert.Single(Assert.Single(store.GetCommands()).Steps.Skip(1));
+        Assert.Equal("Translate", created.Name);
+        Assert.Equal("Translate {}", created.Prompt);
+    }
+
+    [Fact]
+    public void Settings_MissingSelectedStepTemplateDoesNotAddFallbackStep()
+    {
+        var command = Pipeline();
+        var store = new UserCommandStore(filePath: null);
+        store.ReplaceAll([command]);
+        var stepTemplates = new StepTemplateStore();
+        stepTemplates.ReplaceAll([new StepTemplateDefinition
+        {
+            Id = "gone", Name = "Gone", Prompt = "{}", ProviderId = "default",
+        }]);
+        var form = new UserCommandsSettingsForm(
+            store,
+            new LlmProviderSettingsStore(filePath: null),
+            new GlobalSettingsStore(filePath: null),
+            new JsonRequestTemplateStore(),
+            stepTemplates,
+            () => { },
+            () => { },
+            () => { },
+            () => { });
+        stepTemplates.ReplaceAll([]);
+
+        Submit(form, "pipeline:pipeline:add", new JsonObject
+        {
+            ["newStepSource_pipeline"] = "template:gone",
+        });
+
+        Assert.Contains("no longer exists", form.TemplateJson, StringComparison.Ordinal);
+        Assert.Single(Assert.Single(store.GetCommands()).Steps);
+    }
+
+    [Fact]
+    public void Settings_AddsEditsValidatesAndDeletesStepTemplates()
+    {
+        var store = new UserCommandStore(filePath: null);
+        store.ReplaceAll([Pipeline()]);
+        var stepTemplates = new StepTemplateStore();
+        var form = new UserCommandsSettingsForm(
+            store,
+            new LlmProviderSettingsStore(filePath: null),
+            new GlobalSettingsStore(filePath: null),
+            new JsonRequestTemplateStore(),
+            stepTemplates,
+            () => { },
+            () => { },
+            () => { },
+            () => { });
+
+        Submit(form, "add-step-template", new JsonObject { ["newStepTemplateName"] = "Translate" });
+        var template = Assert.Single(stepTemplates.GetTemplates());
+        Assert.Equal("{}", template.Prompt);
+        Assert.Equal("default", template.ProviderId);
+        Assert.Empty(template.RequestTemplateId);
+        Assert.Empty(template.CustomRequestArguments);
+        Assert.True(
+            form.TemplateJson.IndexOf("Step templates", StringComparison.Ordinal) <
+            form.TemplateJson.IndexOf("\"text\":\"Commands\"", StringComparison.Ordinal));
+        var ids = Elements(JsonNode.Parse(form.TemplateJson)!)
+            .Where(node => node["id"] is not null)
+            .Select(node => node["id"]!.ToString())
+            .ToArray();
+        Assert.Equal(ids.Length, ids.Distinct(StringComparer.Ordinal).Count());
+
+        Submit(form, $"save-step-template:{template.Id}", new JsonObject
+        {
+            [$"stepTemplate_{template.Id}_prompt"] = "broken {",
+        });
+        Assert.Equal("{}", Assert.Single(stepTemplates.GetTemplates()).Prompt);
+        Assert.Contains("invalid prompt", form.TemplateJson, StringComparison.Ordinal);
+
+        Submit(form, $"save-step-template:{template.Id}", new JsonObject
+        {
+            [$"stepTemplate_{template.Id}_name"] = "Summarize",
+            [$"stepTemplate_{template.Id}_prompt"] = "Summarize {}",
+            [$"stepTemplate_{template.Id}_arguments"] = "{\"temperature\":0.4}",
+        });
+        template = Assert.Single(stepTemplates.GetTemplates());
+        Assert.Equal("Summarize", template.Name);
+        Assert.Equal("Summarize {}", template.Prompt);
+
+        Submit(form, "add-step-template", new JsonObject { ["newStepTemplateName"] = "summarize" });
+        Assert.Single(stepTemplates.GetTemplates());
+        Assert.Contains("must be unique", form.TemplateJson, StringComparison.Ordinal);
+
+        Submit(form, $"delete-step-template:{template.Id}");
+        Assert.Empty(stepTemplates.GetTemplates());
+    }
+
+    [Fact]
+    public void Settings_StepTemplateDependenciesFollowProviderAndRequestTemplateRules()
+    {
+        var store = new UserCommandStore(filePath: null);
+        store.ReplaceAll([Pipeline()]);
+        var providers = new LlmProviderSettingsStore(filePath: null);
+        var remote = providers.Get().Clone();
+        remote.Id = "remote";
+        remote.Name = "Remote";
+        providers.ReplaceAll([providers.Get(), remote]);
+        var requestTemplates = new JsonRequestTemplateStore();
+        requestTemplates.ReplaceAll([new JsonRequestTemplateDefinition
+        {
+            Id = "request", Name = "Remote request", ProviderId = "remote", RequestArguments = "{}",
+        }, new JsonRequestTemplateDefinition
+        {
+            Id = "other-request", Name = "Other remote request", ProviderId = "remote", RequestArguments = "{}",
+        }]);
+        var stepTemplates = new StepTemplateStore();
+        stepTemplates.ReplaceAll([new StepTemplateDefinition
+        {
+            Id = "step-template",
+            Name = "Remote step",
+            Prompt = "{}",
+            ProviderId = "remote",
+            RequestTemplateId = "request",
+        }, new StepTemplateDefinition
+        {
+            Id = "other-step-template",
+            Name = "Other remote step",
+            Prompt = "{}",
+            ProviderId = "remote",
+            RequestTemplateId = "other-request",
+        }]);
+        var form = new UserCommandsSettingsForm(
+            store,
+            providers,
+            new GlobalSettingsStore(filePath: null),
+            requestTemplates,
+            stepTemplates,
+            () => { },
+            () => { },
+            () => { },
+            () => { });
+
+        Submit(form, "delete-provider:remote");
+        Assert.NotNull(providers.Get("remote"));
+        Assert.Contains("step templates", form.TemplateJson, StringComparison.Ordinal);
+
+        Submit(form, "save-request-template:request", new JsonObject
+        {
+            ["requestTemplateProvider_request"] = "default",
+        });
+        Assert.Empty(stepTemplates.Get("step-template")!.RequestTemplateId);
+
+        Submit(form, "delete-request-template:other-request");
+        Assert.Empty(stepTemplates.Get("other-step-template")!.RequestTemplateId);
+    }
+
+    [Fact]
+    public void Document_RoundTripsStepTemplatesAndLoadsLegacyDocumentWithoutThem()
+    {
+        var path = Path.Combine(Path.GetTempPath(), $"step-templates-{Guid.NewGuid():N}.json");
+        try
+        {
+            var document = new SettingsDocumentStore(path, null, null, null, new DpapiDataProtector());
+            document.ReplaceStepTemplates([new StepTemplateDefinition
+            {
+                Id = "template",
+                Name = "Template",
+                Prompt = "Prompt {}",
+                ProviderId = "default",
+                CustomRequestArguments = "{\"temperature\":0.3}",
+            }]);
+
+            var reloaded = new SettingsDocumentStore(path, null, null, null, new DpapiDataProtector());
+            var saved = Assert.Single(reloaded.GetStepTemplates());
+            Assert.Equal("Template", saved.Name);
+            Assert.Equal("Prompt {}", saved.Prompt);
+            Assert.Contains("\"StepTemplates\"", File.ReadAllText(path), StringComparison.Ordinal);
+            saved.Name = "Mutated copy";
+            Assert.Equal("Template", Assert.Single(reloaded.GetStepTemplates()).Name);
+
+            File.WriteAllText(path, "{\"Global\":{},\"Providers\":[],\"JsonRequestTemplates\":[],\"Commands\":[]}");
+            reloaded = new SettingsDocumentStore(path, null, null, null, new DpapiDataProtector());
+            Assert.Empty(reloaded.GetStepTemplates());
+        }
+        finally
+        {
+            File.Delete(path);
+        }
     }
 
     private static JsonObject FindElement(JsonNode root, string id) =>

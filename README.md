@@ -17,6 +17,7 @@ Command Palette LLM is a Windows Command Palette extension for creating small, f
 
 - Create and edit commands without changing code.
 - Choose a single prompt or an ordered pipeline with named steps and per-step providers and request settings.
+- Save reusable user-step templates and copy them into new pipeline steps.
 - Build multiline prompt templates with `{}` placeholders for the current query.
 - Configure multiple OpenAI-compatible providers and assign a provider per command.
 - Use each tool as a dedicated top-level command, an inline fallback result, or both.
@@ -96,6 +97,15 @@ template assigned to the same provider, and **None** disables template use. Use
 saving the command. Deleting or reassigning a template resets affected commands
 to **None**.
 
+## Create a step template
+
+Use **Step templates** to save a user step's name, prompt, provider, JSON request
+template, and custom request arguments. Template names are unique. Adding a step
+from a template copies its current values into a new, independent pipeline step;
+editing or deleting the template later does not change steps already created from
+it. The copied JSON request-template selection remains a normal live reference to
+that separate JSON request template.
+
 ## Create a command
 
 In the extension settings, enter a command name, select **Add**, and edit the new command. Each command supports:
@@ -127,9 +137,10 @@ Edit a command, select **Pipeline of steps**, and choose **Apply mode**. The com
 keeps its name, send delay, fallback setting, custom icon, and Command Palette ID.
 Configure aliases such as `>>` using Command Palette's native alias settings.
 
-Choose **User step** or an application-provided system step from the **Step type**
-picker, then select **Add step**. User steps have their own prompt, provider, JSON
-request template, and custom request arguments. Each step appears as a card
+Choose **None (new user step)**, the application-provided system step, or a saved
+template from the **Step source** picker, then select **Add step**. **None** is the
+default and creates a blank user step. User steps have their own prompt, provider,
+JSON request template, and custom request arguments. Each step appears as a card
 inside its command, with **Edit** / **Collapse**, move, and **Remove** actions.
 The card summary shows both its provider and JSON request template.
 Adding a step opens its card and preserves other editors and unsaved inputs.
@@ -279,7 +290,7 @@ CommandPaletteLLM/
 
 API keys are encrypted for the current Windows user with Windows DPAPI before
 they are stored in the `Providers` section of `settings.json`. Global settings,
-providers, JSON request templates, and commands are stored together in that file. Existing
+providers, JSON request templates, step templates, and commands are stored together in that file. Existing
 `commands.json`, `providers.json`, and `provider.json` files are migrated
 automatically. Prompts are sent only to the provider
 assigned to the command, and a non-local provider must be explicitly authorized

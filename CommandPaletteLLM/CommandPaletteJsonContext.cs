@@ -12,6 +12,8 @@ namespace CommandPaletteLLM;
 [JsonSerializable(typeof(List<StoredLlmProviderSettings>))]
 [JsonSerializable(typeof(JsonRequestTemplateDefinition))]
 [JsonSerializable(typeof(List<JsonRequestTemplateDefinition>))]
+[JsonSerializable(typeof(StepTemplateDefinition))]
+[JsonSerializable(typeof(List<StepTemplateDefinition>))]
 [JsonSerializable(typeof(SettingsDocument))]
 [JsonSerializable(typeof(ChatCompletionResponse))]
 internal sealed partial class CommandPaletteJsonContext : JsonSerializerContext
