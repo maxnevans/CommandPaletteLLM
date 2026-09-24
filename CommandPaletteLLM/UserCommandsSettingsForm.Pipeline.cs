@@ -202,6 +202,7 @@ internal sealed partial class UserCommandsSettingsForm
             editor.Insert(start, BuildPipelineEditor(command, providers, templates, drafts));
             editor.Insert(start + 1, BuildToggleInput($"advancedOutput_{command.Id}", "Enable advanced output format",
                 ReadBoolean(drafts, $"advancedOutput_{command.Id}", command.EnableAdvancedOutput)));
+            editor.Insert(start + 2, BuildSeparator());
             var summary = card["items"]![0]!["items"]![0]!["columns"]![0]!["items"]!.AsArray();
             summary[1]!["text"] = string.Join(" → ", command.Steps.Select(step => step.Name).Append("Output"));
             summary[2]!["text"] = $"Pipeline · {command.Steps.Count} steps · {GetExposureTitle(command.EffectiveExposure)} · {command.SendDelayMilliseconds} ms";
@@ -281,46 +282,28 @@ internal sealed partial class UserCommandsSettingsForm
             fields.Add(BuildTextInput(key + "arguments", "Custom request arguments (optional)",
                 ReadText(drafts, key + "arguments", step.CustomRequestArguments), "{\"temperature\":0.7}",
                 isRequired: false, isMultiline: true));
-            var inputSource = index == 0 ? "Input" : command.Steps[index - 1].Name;
+            var inputSource = index == 0 ? "Search Content" : command.Steps[index - 1].Name;
             var header = new JsonObject
             {
-                ["type"] = "ColumnSet",
-                ["columns"] = new JsonArray(
+                ["type"] = "Container",
+                ["items"] = new JsonArray(
                     new JsonObject
                     {
-                        ["type"] = "Column",
-                        ["width"] = "stretch",
-                        ["items"] = new JsonArray(
-                            new JsonObject
-                            {
-                                ["type"] = "TextBlock",
-                                ["text"] = $"{index + 1}. {ReadText(drafts, key + "name", step.Name)}",
-                                ["weight"] = "Bolder",
-                                ["wrap"] = true,
-                            },
-                            new JsonObject
-                            {
-                                ["type"] = "TextBlock",
-                                ["text"] = $"{(step.Kind == CommandStepKind.AdvancedOutput ? "Advanced output format · System step" : "User step")} · Input: {inputSource} · {GetProviderName(providerId, providers)}",
-                                ["isSubtle"] = true,
-                                ["spacing"] = "Small",
-                                ["wrap"] = true,
-                            }),
+                        ["type"] = "TextBlock",
+                        ["text"] = $"{index + 1}. {ReadText(drafts, key + "name", step.Name)}",
+                        ["weight"] = "Bolder",
+                        ["wrap"] = true,
                     },
                     new JsonObject
                     {
-                        ["type"] = "Column",
-                        ["width"] = "auto",
-                        ["items"] = new JsonArray(new JsonObject
-                        {
-                            ["type"] = "ActionSet",
-                            ["actions"] = new JsonArray(BuildSubmitAction(
-                                isExpanded ? "Collapse step" : "Edit step",
-                                action + $"{(isExpanded ? "collapse" : "expand")}:{step.Id}")),
-                        }),
+                        ["type"] = "TextBlock",
+                        ["text"] = $"{(step.Kind == CommandStepKind.AdvancedOutput ? "Advanced output format · System step" : "User step")} · Input: {inputSource} · {GetProviderName(providerId, providers)} · {GetRequestTemplateName(templateId, templates)}",
+                        ["isSubtle"] = true,
+                        ["spacing"] = "Small",
+                        ["wrap"] = true,
                     }),
             };
-            items.Add(new JsonObject
+            var stepCard = new JsonObject
             {
                 ["type"] = "Container",
                 ["id"] = cardId,
@@ -343,11 +326,57 @@ internal sealed partial class UserCommandsSettingsForm
                         ["actions"] = new JsonArray(
                             BuildSubmitAction("Move up", action + $"up:{step.Id}", isEnabled: index > 0),
                             BuildSubmitAction("Move down", action + $"down:{step.Id}", isEnabled: index < command.Steps.Count - 1),
-                            BuildSubmitAction("Remove step", action + $"remove:{step.Id}")),
+                            BuildSubmitAction(
+                                isExpanded ? "Collapse" : "Edit",
+                                action + $"{(isExpanded ? "collapse" : "expand")}:{step.Id}"),
+                            BuildSubmitAction("Remove", action + $"remove:{step.Id}")),
+                    }),
+            };
+            items.Add(new JsonObject
+            {
+                ["type"] = "ColumnSet",
+                ["spacing"] = "None",
+                ["columns"] = new JsonArray(
+                    new JsonObject
+                    {
+                        ["type"] = "Column",
+                        ["width"] = "32px",
+                        ["spacing"] = "None",
+                        ["verticalContentAlignment"] = "Top",
+                        ["backgroundImage"] = new JsonObject
+                        {
+                            ["url"] = TimelineImageUrl,
+                            ["fillMode"] = "RepeatVertically",
+                            ["horizontalAlignment"] = "Center",
+                            ["verticalAlignment"] = "Top",
+                        },
+                        ["items"] = new JsonArray(
+                            new JsonObject
+                            {
+                                ["type"] = "Container",
+                                ["minHeight"] = "10px",
+                                ["items"] = new JsonArray(),
+                            },
+                            new JsonObject
+                            {
+                                ["type"] = "TextBlock",
+                                ["text"] = "🔽",
+                                ["horizontalAlignment"] = "Center",
+                                ["spacing"] = "None",
+                                ["wrap"] = false,
+                            }),
+                    },
+                    new JsonObject
+                    {
+                        ["type"] = "Column",
+                        ["width"] = "stretch",
+                        ["spacing"] = "Medium",
+                        ["items"] = new JsonArray(stepCard),
                     }),
             });
         }
 
+        items.Add(BuildSeparator());
         var newStepTypeId = $"newStepType_{command.Id}";
         items.Add(new JsonObject
         {
@@ -379,7 +408,6 @@ internal sealed partial class UserCommandsSettingsForm
                     }),
                 }),
         });
-        items.Add(new JsonObject { ["type"] = "TextBlock", ["text"] = "↓ Output", ["weight"] = "Bolder" });
         return new JsonObject { ["type"] = "Container", ["id"] = $"pipeline_steps_{command.Id}", ["items"] = items };
     }
 

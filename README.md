@@ -130,11 +130,12 @@ Configure aliases such as `>>` using Command Palette's native alias settings.
 Choose **User step** or an application-provided system step from the **Step type**
 picker, then select **Add step**. User steps have their own prompt, provider, JSON
 request template, and custom request arguments. Each step appears as a card
-inside its command, with **Edit step** / **Collapse step**, move, and remove actions.
+inside its command, with **Edit** / **Collapse**, move, and **Remove** actions.
+The card summary shows both its provider and JSON request template.
 Adding a step opens its card and preserves other editors and unsaved inputs.
 Collapsing a step keeps its edits; **Save changes** on the command saves the chain.
-Each card shows where its input comes from: **Input** for the first step, then the
-name of the preceding step. Steps run from top to bottom.
+Each card shows where its input comes from: **Search Content** for the first step,
+then the name of the preceding step. Steps run from top to bottom.
 In the first step, `{}` receives the search text; later steps receive the preceding
 step's complete response. Multiple provider choices are joined with blank lines,
 so the next step can structure all variations together. Requests run sequentially;

@@ -15,6 +15,7 @@ internal sealed partial class UserCommandsSettingsForm : FormContent
 {
     private const string SeparatorImageUrl = "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAA+gAAAAfCAYAAAB03OfYAAAAAXNSR0IArs4c6QAAAARnQU1BAACxjwv8YQUAAAAJcEhZcwAADsMAAA7DAcdvqGQAAACcSURBVHhe7dcxDQAACAQxpL9z2DEAQ5uciKsCAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA+C1JS5IkSZKk2/avAwAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAADwzQHTAoH7+gNkAAAAASUVORK5CYII=";
     private const string SectionSeparatorImageUrl = "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAA+gAAAA+CAYAAAC4LDFLAAAAAXNSR0IArs4c6QAAAARnQU1BAACxjwv8YQUAAAAJcEhZcwAADsMAAA7DAcdvqGQAAAEeSURBVHhe7dkxDQAwDAPB8Adlau3eLeqQDHfSg7BcBQAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAADAhyRHkiRJkiTNZqBLkiRJkrSg91AHAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAKDjAnBCLsjc6V35AAAAAElFTkSuQmCC";
+    private const string TimelineImageUrl = "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAACAAAAABCAYAAAC/iqxnAAAAAXNSR0IArs4c6QAAAARnQU1BAACxjwv8YQUAAAAJcEhZcwAADsMAAA7DAcdvqGQAAAAUSURBVBhXY2CgEFRUVExDFyMFAAB81wH/qjhvZAAAAABJRU5ErkJggg==";
 
     private readonly UserCommandStore _store;
     private readonly LlmProviderSettingsStore _providerSettingsStore;
@@ -1015,15 +1016,6 @@ internal sealed partial class UserCommandsSettingsForm : FormContent
             new JsonObject
             {
                 ["type"] = "TextBlock",
-                ["text"] = "System steps",
-                ["size"] = "Large",
-                ["weight"] = "Bolder",
-            },
-            BuildAdvancedOutputSystemStepEditor(globalSettings, expandedGlobalSettings, draftInputs),
-            BuildSeparator(isSectionSeparator: true),
-            new JsonObject
-            {
-                ["type"] = "TextBlock",
                 ["text"] = "LLM providers",
                 ["size"] = "Large",
                 ["weight"] = "Bolder",
@@ -1181,6 +1173,19 @@ internal sealed partial class UserCommandsSettingsForm : FormContent
                 BuildSubmitAction("Add command", "add"),
             },
         });
+
+        body.Add(BuildSeparator(isSectionSeparator: true));
+        body.Add(new JsonObject
+        {
+            ["type"] = "TextBlock",
+            ["text"] = "System steps",
+            ["size"] = "Large",
+            ["weight"] = "Bolder",
+        });
+        body.Add(BuildAdvancedOutputSystemStepEditor(
+            globalSettings,
+            expandedGlobalSettings,
+            draftInputs));
 
         if (!string.IsNullOrEmpty(errorMessage))
         {

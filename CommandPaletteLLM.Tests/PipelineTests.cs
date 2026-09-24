@@ -479,7 +479,7 @@ public sealed class PipelineTests
         Submit(form, "pipeline:pipeline:expand:two");
         var initialCard = JsonNode.Parse(form.TemplateJson)!;
         Assert.Contains(Elements(FindElement(initialCard, "step_card_pipeline_one")), node =>
-            node["text"]?.ToString().Contains("User step · Input: Input", StringComparison.Ordinal) == true);
+            node["text"]?.ToString().Contains("User step · Input: Search Content", StringComparison.Ordinal) == true);
         Assert.Contains(Elements(FindElement(initialCard, "step_card_pipeline_two")), node =>
             node["text"]?.ToString().Contains("User step · Input: one", StringComparison.Ordinal) == true);
         Submit(form, "pipeline:pipeline:collapse:one", new JsonObject
