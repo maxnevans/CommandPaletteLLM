@@ -4,6 +4,13 @@ on:
   push:
     tags:
       - "v*"
+  workflow_dispatch:
+    inputs:
+      release_tag:
+        description: Existing release tag to publish
+        required: true
+        default: v0.1.0
+        type: string
 
 permissions:
   contents: read
@@ -24,14 +31,16 @@ jobs:
       PACKAGE_DIRECTORY: AppPackages
 
     steps:
-      - name: Check out tagged commit
+      - name: Check out release source
         uses: actions/checkout@v4
+        with:
+          ref: ${{ inputs.release_tag || github.ref }}
 
       - name: Derive package version from tag
         id: version
         shell: pwsh
         run: |
-          $tag = "${{ github.ref_name }}"
+          $tag = "${{ inputs.release_tag || github.ref_name }}"
           if ($tag -notmatch '^v(?<major>\d+)\.(?<minor>\d+)\.(?<patch>\d+)$') {
               throw "Release tags must use the form vMajor.Minor.Patch. Received '$tag'."
           }
@@ -47,6 +56,7 @@ jobs:
           }
 
           $semanticVersion = $parts -join '.'
+          "release_tag=$tag" >> $env:GITHUB_OUTPUT
           "semantic_version=$semanticVersion" >> $env:GITHUB_OUTPUT
           "store_version=$semanticVersion.0" >> $env:GITHUB_OUTPUT
 
@@ -105,7 +115,7 @@ jobs:
       - name: Save Store package as workflow artifact
         uses: actions/upload-artifact@v4
         with:
-          name: CommandPaletteLLM-${{ github.ref_name }}
+          name: CommandPaletteLLM-${{ steps.version.outputs.release_tag }}
           path: ${{ steps.package.outputs.path }}
           if-no-files-found: error
 
@@ -124,6 +134,18 @@ jobs:
       - name: Submit package to Microsoft Store
         shell: pwsh
         run: |
-          msstore publish "${{ github.workspace }}\CommandPaletteLLM" `
-            --inputFile "${{ steps.package.outputs.path }}" `
+          $packagePath = "${{ steps.package.outputs.path }}"
+          $publishHelp = msstore publish --help 2>&1 | Out-String
+
+          if ($publishHelp -match '--inputFile\b') {
+              $packageArgument = @('--inputFile', $packagePath)
+          }
+          elseif ($publishHelp -match '--inputDirectory\b') {
+              $packageArgument = @('--inputDirectory', (Split-Path -Parent $packagePath))
+          }
+          else {
+              throw 'The installed Microsoft Store Developer CLI exposes no supported package input option.'
+          }
+
+          msstore publish "${{ github.workspace }}\CommandPaletteLLM" @packageArgument `
             --appId "${{ vars.STORE_PRODUCT_ID }}"
