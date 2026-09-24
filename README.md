@@ -10,8 +10,18 @@
 
 Command Palette LLM is a Windows Command Palette extension for creating small, focused AI tools: summarize selected text, rewrite a sentence, generate several alternatives, classify input into rich results, or build any other prompt-driven command you need. It works with local servers such as llama.cpp as well as hosted services that expose an OpenAI-compatible Chat Completions API.
 
-> [!NOTE]
-> This project currently ships as source code rather than a prebuilt installer. See [Build and deploy](#build-and-deploy) for local installation.
+## Install with WinGet
+
+Command Palette LLM is published in Microsoft Store and can be installed through
+WinGet's built-in `msstore` source:
+
+```powershell
+winget install --id 9PK5TNWKQ00Q --source msstore
+```
+
+The same signed Store package is available from the
+[Microsoft Store listing](https://apps.microsoft.com/detail/9PK5TNWKQ00Q).
+Microsoft PowerToys with Command Palette enabled is required separately.
 
 ## Features
 
@@ -297,7 +307,7 @@ assigned to the command, and a non-local provider must be explicitly authorized
 in settings before the extension contacts it. The extension has no separate
 telemetry or cloud backend. See [PRIVACY.md](PRIVACY.md) for the full data flow.
 
-## Publish a Microsoft Store release
+## Publish a Microsoft Store and WinGet release
 
 The package uses the Partner Center identity reserved for this product:
 
@@ -353,7 +363,18 @@ Kit. Microsoft Store signs the submitted package and makes it available only
 after certification completes. The `AppPackages` and `BundleArtifacts`
 directories are generated output and must remain uncommitted.
 
-Store distribution is the only maintained end-user installation path. The repository does not produce or support a private, self-signed, or unsigned installer.
+Once a certified release is live, verify that WinGet can resolve the Store
+product and reports the new version:
+
+```powershell
+winget show --id 9PK5TNWKQ00Q --source msstore
+```
+
+Store distribution, including WinGet's `msstore` source, is the only maintained
+end-user installation path. The repository does not produce or support a
+private, self-signed, or unsigned installer. A separate manifest in the WinGet
+community source is intentionally not used because it would require hosting and
+maintaining another signed installer channel.
 
 ## Troubleshooting
 

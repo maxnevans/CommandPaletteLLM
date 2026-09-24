@@ -208,8 +208,7 @@ See Microsoft's description of
 3. In the product's left navigation, expand **Product management**.
 4. Select **Product identity**.
 5. Find **Store ID**.
-6. Copy the 12-character identifier. It normally resembles
-   `9NBLGGH4R315`.
+6. Confirm that the 12-character identifier is `9PK5TNWKQ00Q` and copy it.
 
 Store this value in GitHub as the repository variable `STORE_PRODUCT_ID`.
 
@@ -369,6 +368,17 @@ published.
 8. Open the product submission/release page.
 9. Confirm that the new submission and package version appear.
 10. Monitor Microsoft Store certification until it completes.
+11. After the certified release is live, verify its WinGet catalog entry:
+
+    ```powershell
+    winget show --id 9PK5TNWKQ00Q --source msstore
+    ```
+
+    Users can install the signed Store package through WinGet with:
+
+    ```powershell
+    winget install --id 9PK5TNWKQ00Q --source msstore
+    ```
 
 The Store package version has four components. For example, tag `v1.2.3`
 produces package version `1.2.3.0`. The final component remains zero.
